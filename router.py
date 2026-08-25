@@ -1,6 +1,6 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# AI Task Router V1.7.0
+# AI Task Router V1.7.1
 # =========================================================
 
 MODULES = {
@@ -59,11 +59,16 @@ def analyze_investment_task(task):
     return result
 
 def route_task(task):
-    module = classify_task(task)
-    result = {"module": module, "module_name": MODULES.get(module, {"name": "🧠 AI总控台", "description": "无法自动识别的任务"})["name"], "task": task}
-    if module != "investment" and has_stock_identifier(task):
-        module = "investment"; result["module"] = module; result["module_name"] = MODULES[module]["name"]
-    if module == "investment": result.update(analyze_investment_task(task))
-    elif module == "finance":
+    original_module = classify_task(task)
+    result = {"module": original_module, "module_name": MODULES.get(original_module, {"name": "🧠 AI总控台", "description": "无法自动识别的任务"})["name"], "task": task}
+    if original_module != "investment" and has_stock_identifier(task):
+        original_module = "investment"; result["module"] = original_module; result["module_name"] = MODULES[original_module]["name"]
+    if original_module == "investment":
+        result.update(analyze_investment_task(task))
+    elif original_module == "finance":
+        # 当前 app.py 已稳定运行，财经Agent复用任务执行通道并在executor中直接渲染；保留财经模块名称。
         result["agent"] = "finance_intelligence_agent"; result["sub_type"] = "全球财经情报与宏观研究"
+        result["module"] = "investment"
+        result["original_module"] = "finance"
+        result["module_name"] = MODULES["finance"]["name"]
     return result
