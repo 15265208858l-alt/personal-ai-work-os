@@ -1,18 +1,17 @@
 # =========================================================
 # Personal AI Work OS
-# Execution Engine V1.8.1
+# Execution Engine V1.9.0
 # =========================================================
 
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
-from gold_agent import analyze_gold_market, render_gold_result
+from gold_macro_engine import analyze_gold_market, render_gold_result
 
 
 def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None):
-    task_name = task["name"]
     result = {
         "task_id": task["id"],
-        "task_name": task_name,
+        "task_name": task["name"],
         "status": "执行完成",
         "message": "",
     }
@@ -24,13 +23,13 @@ def execute_task(task, user_request, market_data=None, value_stock_result=None, 
         result["gold_result"] = gold_result
 
     if task["id"].startswith("INV-"):
-        result["message"] = f"已接入 ValueStock AI：{task_name}。"
+        result["message"] = f"已接入 ValueStock AI：{task['name']}。"
     elif task["id"].startswith("GOLD-"):
-        result["message"] = f"已接入黄金宏观Agent：{task_name}。"
+        result["message"] = f"已接入黄金综合宏观Agent：{task['name']}。"
     elif task["id"].startswith("PROJ"):
-        result["message"] = f"正在执行项目任务：{task_name}"
+        result["message"] = f"正在执行项目任务：{task['name']}"
     elif task["id"].startswith("LEARN"):
-        result["message"] = f"正在执行学习任务：{task_name}"
+        result["message"] = f"正在执行学习任务：{task['name']}"
     else:
         result["status"] = "待开发"
         result["message"] = "该任务的具体执行模块将在后续版本接入。"
@@ -62,21 +61,16 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
     elif agent == "gold_agent":
         try:
             gold_result = analyze_gold_market()
-            # 旧 app.py 对非股票Agent只有通用框架展示；这里直接把黄金Agent
-            # 的专业结果渲染到当前 Streamlit 执行流中，保持主界面无需大改。
             render_gold_result(gold_result)
         except Exception as exc:
-            gold_result = {"success": False, "error": f"黄金宏观Agent调用异常：{type(exc).__name__}: {exc}"}
+            gold_result = {"success": False, "error": f"黄金综合宏观Agent调用异常：{type(exc).__name__}: {exc}"}
             try:
                 import streamlit as st
                 st.error(gold_result["error"])
             except Exception:
                 pass
 
-    results = []
-    for task in tasks:
-        results.append(execute_task(task, user_request, market_data, value_stock_result, gold_result))
-    return results
+    return [execute_task(task, user_request, market_data, value_stock_result, gold_result) for task in tasks]
 
 
 def get_execution_summary(results):
