@@ -1,14 +1,12 @@
 # =========================================================
 # Personal AI Work OS
-# Execution Engine V1.3
+# Execution Engine V1.4
 # =========================================================
 
+from data_provider import normalize_stock_code, get_stock_quote
 
-# =========================================================
-# 1. 执行单个任务
-# =========================================================
 
-def execute_task(task, user_request):
+def execute_task(task, user_request, market_data=None):
 
     task_name = task["name"]
 
@@ -16,158 +14,103 @@ def execute_task(task, user_request):
         "task_id": task["id"],
         "task_name": task_name,
         "status": "执行完成",
-        "message": ""
+        "message": "",
     }
 
-
-    # =====================================================
-    # 投资分析任务
-    # =====================================================
+    if market_data is not None:
+        result["market_data"] = market_data
 
     if task["id"] == "INV-01":
-
         result["message"] = (
-            "准备分析目标公司的行业空间、行业周期、"
-            "竞争格局和长期成长空间。"
+            "已进入行业分析任务。V1.4开始接入真实股票行情；"
+            "行业基本面数据将在后续版本接入。"
         )
-
 
     elif task["id"] == "INV-02":
-
         result["message"] = (
-            "准备分析企业护城河，包括品牌、成本、"
-            "技术、渠道、规模和客户粘性。"
+            "已进入护城河分析任务。将结合公司业务、竞争格局"
+            "和历史经营表现继续分析。"
         )
-
 
     elif task["id"] == "INV-03":
-
         result["message"] = (
-            "准备分析过去几年营业收入、"
-            "净利润以及增长质量。"
+            "已进入营收与净利润成长任务。财务报表数据接口"
+            "将在下一阶段接入。"
         )
-
 
     elif task["id"] == "INV-04":
-
         result["message"] = (
-            "准备分析ROE、毛利率、净利率、"
-            "资产周转率和盈利能力。"
+            "已进入ROE及盈利能力任务。真实财务指标将在下一阶段接入。"
         )
-
 
     elif task["id"] == "INV-05":
-
         result["message"] = (
-            "重点检查经营现金流与净利润是否匹配，"
-            "识别利润含金量风险。"
+            "已进入经营现金流任务。重点检查现金流与利润匹配度。"
         )
-
 
     elif task["id"] == "INV-06":
-
-        result["message"] = (
-            "分析资产负债率、流动比率、"
-            "短期债务和长期偿债能力。"
-        )
-
+        result["message"] = "已进入资产负债表与偿债能力任务。"
 
     elif task["id"] == "INV-07":
-
-        result["message"] = (
-            "检查应收账款和存货增长速度，"
-            "识别经营质量变化。"
-        )
-
+        result["message"] = "已进入应收账款与存货质量任务。"
 
     elif task["id"] == "INV-08":
-
-        result["message"] = (
-            "检查商誉、资本开支以及潜在资产减值风险。"
-        )
-
+        result["message"] = "已进入商誉、资本开支与减值风险任务。"
 
     elif task["id"] == "INV-09":
-
-        result["message"] = (
-            "分析管理层、主要股东、"
-            "关联交易以及公司治理情况。"
-        )
-
+        result["message"] = "已进入管理层、股东结构及公司治理任务。"
 
     elif task["id"] == "INV-10":
-
         result["message"] = (
-            "准备进行估值分析，并计算合理价值、"
-            "建仓区、重仓区和高估区。"
+            "已进入估值任务。合理价格模型将在财务数据接入后启用。"
         )
-
 
     elif task["id"] == "INV-11":
-
         result["message"] = (
-            "汇总前面所有分析结果，"
-            "形成最终投资判断。"
+            "已进入综合投资判断任务。当前先汇总真实行情与任务状态。"
         )
-
-
-    # =====================================================
-    # 项目任务
-    # =====================================================
 
     elif task["id"].startswith("PROJ"):
-
-        result["message"] = (
-            f"正在执行项目任务：{task_name}"
-        )
-
-
-    # =====================================================
-    # 学习任务
-    # =====================================================
+        result["message"] = f"正在执行项目任务：{task_name}"
 
     elif task["id"].startswith("LEARN"):
-
-        result["message"] = (
-            f"正在执行学习任务：{task_name}"
-        )
-
+        result["message"] = f"正在执行学习任务：{task_name}"
 
     else:
-
         result["status"] = "待开发"
-
-        result["message"] = (
-            "该任务的具体执行模块将在后续版本接入。"
-        )
-
+        result["message"] = "该任务的具体执行模块将在后续版本接入。"
 
     return result
 
 
-# =========================================================
-# 2. 执行整个任务列表
-# =========================================================
-
 def execute_tasks(tasks, user_request):
+
+    market_data = None
+
+    if any(task["id"].startswith("INV-") for task in tasks):
+        code = normalize_stock_code(user_request)
+
+        if code:
+            market_data = get_stock_quote(code)
+        else:
+            market_data = {
+                "success": False,
+                "error": "未识别到A股股票名称或6位股票代码。",
+            }
 
     results = []
 
     for task in tasks:
-
-        result = execute_task(
-            task,
-            user_request
+        results.append(
+            execute_task(
+                task,
+                user_request,
+                market_data=market_data,
+            )
         )
-
-        results.append(result)
 
     return results
 
-
-# =========================================================
-# 3. 统计执行结果
-# =========================================================
 
 def get_execution_summary(results):
 
@@ -183,5 +126,5 @@ def get_execution_summary(results):
     return {
         "total": total,
         "completed": completed,
-        "pending": pending
+        "pending": pending,
     }
