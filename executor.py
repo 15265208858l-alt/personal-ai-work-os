@@ -1,13 +1,14 @@
 # =========================================================
 # Personal AI Work OS
-# Execution Engine V1.7.0
+# Execution Engine V1.8.0
 # =========================================================
 
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
+from gold_agent import analyze_gold_market
 
 
-def execute_task(task, user_request, market_data=None, value_stock_result=None):
+def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None):
     task_name = task["name"]
     result = {
         "task_id": task["id"],
@@ -19,9 +20,13 @@ def execute_task(task, user_request, market_data=None, value_stock_result=None):
         result["market_data"] = market_data
     if value_stock_result is not None:
         result["value_stock_result"] = value_stock_result
+    if gold_result is not None:
+        result["gold_result"] = gold_result
 
     if task["id"].startswith("INV-"):
         result["message"] = f"已接入 ValueStock AI：{task_name}。"
+    elif task["id"].startswith("GOLD-"):
+        result["message"] = f"已接入黄金宏观Agent：{task_name}。"
     elif task["id"].startswith("PROJ"):
         result["message"] = f"正在执行项目任务：{task_name}"
     elif task["id"].startswith("LEARN"):
@@ -33,16 +38,13 @@ def execute_task(task, user_request, market_data=None, value_stock_result=None):
 
 
 def execute_tasks(tasks, user_request, route_result=None, **kwargs):
-    """根据 Router 的 agent 决定调用哪个专业引擎。
-
-    ValueStock 已经会一次性返回实时行情，因此 Work OS 不再先调用
-    data_provider.get_stock_quote() 做重复请求，减少一次外部数据访问。
-    """
+    """根据 Router 的 agent 调度专业引擎。"""
     if route_result is None:
         route_result = kwargs.get("route_result") or {}
 
     market_data = None
     value_stock_result = None
+    gold_result = None
     agent = route_result.get("agent")
 
     if agent == "value_stock_agent":
@@ -50,31 +52,22 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
             code = normalize_stock_code(user_request)
             if code:
                 value_stock_result = run_value_stock_analysis(code)
-                # UI 仍保留 market_data 字段兼容旧版本，但直接复用 ValueStock 返回的行情。
                 if isinstance(value_stock_result, dict):
                     market_data = value_stock_result.get("market")
             else:
-                market_data = {
-                    "success": False,
-                    "error": "未识别到A股股票名称或6位股票代码。"
-                }
-                value_stock_result = {
-                    "success": False,
-                    "error": "未识别到A股股票名称或6位股票代码，未启动 ValueStock AI。"
-                }
+                value_stock_result = {"success": False, "error": "未识别到A股股票名称或6位股票代码。"}
         except Exception as exc:
-            market_data = {
-                "success": False,
-                "error": f"行情数据获取异常：{type(exc).__name__}"
-            }
-            value_stock_result = {
-                "success": False,
-                "error": f"ValueStock AI 调用异常：{type(exc).__name__}"
-            }
+            value_stock_result = {"success": False, "error": f"ValueStock AI 调用异常：{type(exc).__name__}"}
+
+    elif agent == "gold_agent":
+        try:
+            gold_result = analyze_gold_market()
+        except Exception as exc:
+            gold_result = {"success": False, "error": f"黄金宏观Agent调用异常：{type(exc).__name__}: {exc}"}
 
     results = []
     for task in tasks:
-        results.append(execute_task(task, user_request, market_data, value_stock_result))
+        results.append(execute_task(task, user_request, market_data, value_stock_result, gold_result))
     return results
 
 
