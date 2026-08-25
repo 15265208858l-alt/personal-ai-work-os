@@ -1,13 +1,13 @@
 # =========================================================
 # Personal AI Work OS
-# ValueStock AI Bridge V2.0.1
+# ValueStock AI Bridge V2.0.2
 # =========================================================
-# 本版本：
-# 1. Work OS 不再执行同行业比较。
-# 2. 不再要求加载 peer_compare / relative_valuation。
-# 3. 保留财务、风险、估值、历史估值、成长质量、综合评分、投资决策。
-# 4. 保留 ValueStock 独立版，不修改其完整同行比较功能。
-# 5. 保留缓存、并行数据、重复分析缓存。
+# 本版本彻底解决：
+# 1. Work OS 不执行同行业比较。
+# 2. 不导入 peer_compare / relative_valuation。
+# 3. 强制使用“最新 ValueStock analysis_engine”，避免旧模块缓存残留。
+# 4. 每个最新 commit 建立独立缓存目录，旧模块不会混用。
+# 5. 保留目标股票数据并行、引擎缓存、重复分析缓存。
 # =========================================================
 
 from __future__ import annotations
@@ -24,10 +24,9 @@ import requests
 
 REPO = "15265208858l-alt/value-stock-ai"
 BRANCH = "main"
+BRIDGE_VERSION = "V2.0.2"
 CACHE_ROOT = Path(".value_stock_cache")
 
-# Work OS 共享引擎已经从 analysis_engine 中移除了同行比较依赖，
-# 因此这里也不再下载/导入 peer_compare 和 relative_valuation。
 REQUIRED_FILES = (
     "analysis_engine.py",
     "data.py",
@@ -45,22 +44,13 @@ REQUIRED_FILES = (
 )
 
 VALUESTOCK_MODULES = {Path(filename).stem for filename in REQUIRED_FILES}
-_LATEST_COMMIT_VALUE = None
-_LATEST_COMMIT_TIME = 0.0
-_COMMIT_TTL_SECONDS = 300
 
 
 def _get_latest_commit() -> str:
-    global _LATEST_COMMIT_VALUE, _LATEST_COMMIT_TIME
-    now = time.time()
-    if _LATEST_COMMIT_VALUE and now - _LATEST_COMMIT_TIME < _COMMIT_TTL_SECONDS:
-        return _LATEST_COMMIT_VALUE
     url = f"https://api.github.com/repos/{REPO}/git/ref/heads/{BRANCH}"
-    response = requests.get(url, timeout=5)
+    response = requests.get(url, timeout=8)
     response.raise_for_status()
-    _LATEST_COMMIT_VALUE = response.json()["object"]["sha"]
-    _LATEST_COMMIT_TIME = now
-    return _LATEST_COMMIT_VALUE
+    return response.json()["object"]["sha"]
 
 
 def _download_file(commit_sha: str, filename: str, target: Path) -> None:
@@ -68,7 +58,7 @@ def _download_file(commit_sha: str, filename: str, target: Path) -> None:
     last_error = None
     for attempt in range(2):
         try:
-            response = requests.get(raw_url, timeout=10)
+            response = requests.get(raw_url, timeout=12)
             response.raise_for_status()
             target.write_text(response.text, encoding="utf-8")
             return
@@ -82,9 +72,8 @@ def _download_file(commit_sha: str, filename: str, target: Path) -> None:
 @lru_cache(maxsize=2)
 def _load_value_stock_engine_for_commit(commit_sha: str):
     started = time.time()
-    CACHE_ROOT.mkdir(exist_ok=True)
-    cache_dir = CACHE_ROOT / commit_sha[:12]
-    cache_dir.mkdir(exist_ok=True)
+    cache_dir = CACHE_ROOT / f"{BRIDGE_VERSION}_{commit_sha[:12]}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     missing = []
     for filename in REQUIRED_FILES:
@@ -102,14 +91,16 @@ def _load_value_stock_engine_for_commit(commit_sha: str):
                 future.result()
 
     path = str(cache_dir.resolve())
-    if path not in sys.path:
-        sys.path.insert(0, path)
+    sys.path = [p for p in sys.path if p != path]
+    sys.path.insert(0, path)
 
     for name in VALUESTOCK_MODULES:
         sys.modules.pop(name, None)
-
     importlib.invalidate_caches()
+
+    # 当前共享版 analysis_engine 不应依赖 peer_compare。
     engine = importlib.import_module("analysis_engine")
+    engine_file = str(getattr(engine, "__file__", ""))
     data_module = importlib.import_module("data")
 
     @lru_cache(maxsize=64)
@@ -138,14 +129,18 @@ def _load_value_stock_engine_for_commit(commit_sha: str):
         return result
 
     engine.load_stock_data = fast_load_stock_data
-
     engine._workos_bridge_load_time = round(time.time() - started, 2)
+    engine._workos_engine_file = engine_file
+    engine._workos_bridge_version = BRIDGE_VERSION
     return engine
 
 
 def _load_value_stock_engine():
     commit_sha = _get_latest_commit()
     engine = _load_value_stock_engine_for_commit(commit_sha)
+    # 清理可能残留的旧同行模块；共享版不使用它们。
+    sys.modules.pop("peer_compare", None)
+    sys.modules.pop("relative_valuation", None)
     return engine, commit_sha
 
 
@@ -179,11 +174,10 @@ _ANALYSIS_CACHE_TTL = 90
 def run_value_stock_analysis(
     stock_code: str,
     peer_input: str = "",
-    override: str = "自动识别"
+    override: str = "自动识别",
 ) -> dict[str, Any]:
     started = time.time()
     code = str(stock_code).strip()
-    # peer_input 保留参数兼容旧调用，但 Work OS 不再执行同行业比较。
     cache_key = (code, str(override or "自动识别"))
 
     cached = _ANALYSIS_CACHE.get(cache_key)
@@ -210,7 +204,7 @@ def run_value_stock_analysis(
             result["source_commit"] = commit_sha
             result["diagnostics"] = _get_data_diagnostics(engine)
             result["bridge"] = {
-                "version": "V2.0.1",
+                "version": BRIDGE_VERSION,
                 "engine_cached": True,
                 "cache_hit": False,
                 "peer_comparison_enabled": False,
@@ -218,6 +212,7 @@ def run_value_stock_analysis(
                 "data_retry_delegated_to_valuestock": True,
                 "parallel_data_prefetch": True,
                 "source_repo": REPO,
+                "source_engine_file": getattr(engine, "_workos_engine_file", ""),
                 "data_score": score,
                 "engine_load_seconds": load_time,
                 "analysis_seconds": analysis_time,
@@ -225,13 +220,18 @@ def run_value_stock_analysis(
             }
             _ANALYSIS_CACHE[cache_key] = {"time": time.time(), "result": result}
         return result
+
     except Exception as exc:
         return {
             "success": False,
             "error": f"ValueStock AI共享引擎调用失败：{type(exc).__name__}: {exc}",
-            "diagnostics": {"bridge_error": f"{type(exc).__name__}: {exc}"},
+            "diagnostics": {
+                "bridge_error": f"{type(exc).__name__}: {exc}",
+                "bridge_version": BRIDGE_VERSION,
+                "required_mode": "Work OS不执行同行业比较",
+            },
             "bridge": {
-                "version": "V2.0.1",
+                "version": BRIDGE_VERSION,
                 "engine_cached": True,
                 "peer_comparison_enabled": False,
                 "parallel_data_prefetch": True,
