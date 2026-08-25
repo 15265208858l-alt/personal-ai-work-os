@@ -58,7 +58,9 @@ if st.button("🚀 开始执行", type="primary"):
 
                 st.markdown("### ⚙️ AI任务执行")
                 with st.spinner("正在调用专业Agent，请稍候……"):
-                    results = execute_tasks(tasks, user_task, route_result=result)
+                    # 使用位置参数传递 route_result，避免 Streamlit 热更新时出现
+                    # “unexpected keyword argument route_result”的旧模块缓存兼容问题。
+                    results = execute_tasks(tasks, user_task, result)
 
                 execution_summary = get_execution_summary(results)
                 col1, col2, col3 = st.columns(3)
@@ -118,48 +120,18 @@ if st.button("🚀 开始执行", type="primary"):
                             st.success("✅ 当前 ValueStock AI 未发现明显财务风险")
 
                         st.markdown("### 🏭 同行比较")
-                        st.write(f"**行业：** {vr['peer'].get('industry') or '暂无'}")
-                        st.write(f"**自动同行：** {', '.join(vr['peer'].get('peers', [])) or '暂无'}")
-                        st.write(f"**同行评级：** {vr['peer'].get('rating') or '数据不足'}")
+                        peers = vr["peer"].get("peers", [])
+                        if peers:
+                            st.dataframe(peers, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("暂无同行比较数据")
 
                         st.markdown("### 🧠 最终投资决策")
-                        decision = vr["decision"]
-                        st.info(f"**{decision.get('decision', '数据不足')}**")
-                        st.write(f"**操作建议：** {decision.get('action', '暂无')}")
-                        st.write(f"**参考仓位：** {decision.get('position', '暂无')}")
-                        st.write(f"**判断依据：** {decision.get('reason', '暂无')}")
-                        st.caption("投资分析由你现有的 ValueStock AI V17.x 核心模块执行；Personal AI Work OS 负责任务路由、专业Agent调度与结果展示。")
-
-                elif result.get("agent") == "gold_agent":
-                    st.info("🥇 已识别为黄金分析任务。黄金专业Agent将在下一版本接入实时宏观与市场数据。")
-                elif result.get("agent") == "investment_agent":
-                    st.info("📊 已识别为综合投资任务，等待对应专业Agent接入。")
-
-                if market_data is not None and not market_data.get("success"):
-                    st.warning(f"实时行情暂未获取成功：{market_data.get('error', '未知错误')}")
+                        decision = vr["investment"].get("decision") or vr.get("decision") or "暂无"
+                        st.info(str(decision))
 
                 st.divider()
-                for execution_result in results:
-                    if execution_result["status"] == "执行完成":
-                        st.success(f"✅ {execution_result['task_id']} {execution_result['task_name']}")
-                        st.caption(execution_result["message"])
-                    else:
-                        st.warning(f"⏳ {execution_result['task_id']} {execution_result['task_name']}")
-                        st.caption(execution_result["message"])
-        else:
-            st.info("任务已经成功路由。")
-            st.write("该模块的具体执行能力将在后续版本接入。")
-
-st.divider()
-st.markdown("## 🚀 当前项目")
-projects = [
-    ("ValueStock AI", "🟢 V17.x 核心引擎"),
-    ("Personal AI Work OS", "🔵 V1.6"),
-    ("AI学习系统", "🔵 进行中"),
-    ("AI网店", "🟡 规划中"),
-    ("AI视频", "🟡 规划中")
-]
-for name, status in projects:
-    col1, col2 = st.columns([4, 1])
-    col1.write(name)
-    col2.write(status)
+                st.markdown("### 📋 执行明细")
+                for r in results:
+                    icon = "✅" if r["status"] == "执行完成" else "⏳"
+                    st.write(f"{icon} **{r['task_id']}** {r['task_name']} — {r['message']}")
