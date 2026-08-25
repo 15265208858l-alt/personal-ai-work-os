@@ -1,6 +1,6 @@
 # =========================================================
 # Personal AI Work OS
-# ValueStock AI Bridge V1.7.2
+# ValueStock AI Bridge V1.7.3
 # =========================================================
 
 from __future__ import annotations
@@ -48,7 +48,6 @@ def _load_value_stock_engine():
 
     for filename in py_files:
         target = cache_dir / filename
-        # 当前 commit 单独缓存；如果文件存在则不会重复下载。
         if not target.exists():
             raw_url = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/{filename}"
             response = requests.get(raw_url, timeout=20)
@@ -68,18 +67,54 @@ def _load_value_stock_engine():
     return engine, commit_sha
 
 
-def _get_data_diagnostics():
+def _get_data_diagnostics(engine=None):
+    """从本次实际加载的 ValueStock data 模块读取诊断信息。
+
+    不再盲目读取当前进程中可能同名的 data 模块，避免与 Work OS
+    或其他依赖产生模块名冲突。所有输出强制转换成 JSON 可序列化字符串。
+    """
     try:
-        data_module = sys.modules.get("data")
-        if data_module and hasattr(data_module, "get_data_diagnostics"):
-            return data_module.get_data_diagnostics()
+        data_module = None
+
+        # analysis_engine 的 load_stock_data 是本次实际执行所使用的函数。
+        if engine is not None:
+            load_fn = getattr(engine, "load_stock_data", None)
+            module_name = getattr(load_fn, "__module__", None)
+            if module_name:
+                data_module = sys.modules.get(module_name)
+
+        # 兼容旧调用方式。
+        if data_module is None:
+            data_module = sys.modules.get("data")
+
+        if data_module is None:
+            return {"diagnostic_reader": "未找到 ValueStock AI data 模块"}
+
+        getter = getattr(data_module, "get_data_diagnostics", None)
+        if not callable(getter):
+            return {
+                "diagnostic_reader": "当前 ValueStock data 模块没有 get_data_diagnostics()",
+                "module": str(getattr(data_module, "__file__", "unknown")),
+            }
+
+        raw = getter()
+        if not isinstance(raw, dict):
+            return {"diagnostic_reader": f"诊断结果类型异常：{type(raw).__name__}"}
+
+        return {
+            str(key): str(value)
+            for key, value in raw.items()
+        }
     except Exception as exc:
         return {"diagnostic_reader": f"{type(exc).__name__}: {exc}"}
-    return {}
 
 
-def _clear_data_cache():
+def _clear_data_cache(engine=None):
     try:
+        load_fn = getattr(engine, "load_stock_data", None) if engine is not None else None
+        if load_fn is not None and hasattr(load_fn, "cache_clear"):
+            load_fn.cache_clear()
+            return
         data_module = sys.modules.get("data")
         if data_module and hasattr(data_module, "load_stock_data"):
             data_module.load_stock_data.cache_clear()
@@ -93,12 +128,11 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
         engine, commit_sha = _load_value_stock_engine()
         result = engine.analyze_stock(stock_code, peer_input=peer_input, override=override)
 
-        # AkShare/Eastmoney/Sina 在云端偶发空响应。第一次完整性过低时，清理缓存再跑一次。
         dc = result.get("data_center", {}) if isinstance(result, dict) else {}
         score = dc.get("score", 100) if isinstance(dc, dict) else 100
         if isinstance(result, dict) and score < 75:
-            diagnostics_first = _get_data_diagnostics()
-            _clear_data_cache()
+            diagnostics_first = _get_data_diagnostics(engine)
+            _clear_data_cache(engine)
             result_retry = engine.analyze_stock(stock_code, peer_input=peer_input, override=override)
             if isinstance(result_retry, dict):
                 result = result_retry
@@ -106,16 +140,17 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
 
         if isinstance(result, dict):
             result["source_commit"] = commit_sha
-            result["diagnostics"] = _get_data_diagnostics()
+            result["diagnostics"] = _get_data_diagnostics(engine)
             result["bridge"] = {
-                "version": "V1.7.2",
+                "version": "V1.7.3",
                 "data_retry_enabled": True,
                 "source_repo": REPO,
+                "diagnostics_safe": True,
             }
         return result
     except Exception as exc:
         return {
             "success": False,
             "error": f"ValueStock AI共享引擎调用失败：{type(exc).__name__}: {exc}",
-            "diagnostics": _get_data_diagnostics(),
+            "diagnostics": {"bridge_error": f"{type(exc).__name__}: {exc}"},
         }
