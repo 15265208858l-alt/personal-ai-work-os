@@ -58,6 +58,8 @@ def build_learning_tasks():
 def decompose_task(task_type):
     if task_type == "investment":
         return build_investment_tasks()
+    if task_type == "gold":
+        return build_gold_tasks()
     if task_type == "project":
         return build_project_tasks()
     if task_type == "learning":
