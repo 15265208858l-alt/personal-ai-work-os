@@ -1,11 +1,13 @@
 # =========================================================
 # Personal AI Work OS
-# ValueStock AI Bridge V2.1.0
+# ValueStock AI Bridge V2.0.1
 # =========================================================
-# 当前策略：
-# - 保留 ValueStock 的财务、风险、估值、历史估值、成长质量、综合评分、决策。
-# - Work OS 关闭“同行业比较”，因此不再加载 peer_compare / relative_valuation。
-# - 继续保留引擎缓存、6路目标数据并行、短时结果缓存。
+# 本版本：
+# 1. Work OS 不再执行同行业比较。
+# 2. 不再要求加载 peer_compare / relative_valuation。
+# 3. 保留财务、风险、估值、历史估值、成长质量、综合评分、投资决策。
+# 4. 保留 ValueStock 独立版，不修改其完整同行比较功能。
+# 5. 保留缓存、并行数据、重复分析缓存。
 # =========================================================
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ REPO = "15265208858l-alt/value-stock-ai"
 BRANCH = "main"
 CACHE_ROOT = Path(".value_stock_cache")
 
+# Work OS 共享引擎已经从 analysis_engine 中移除了同行比较依赖，
+# 因此这里也不再下载/导入 peer_compare 和 relative_valuation。
 REQUIRED_FILES = (
     "analysis_engine.py",
     "data.py",
@@ -44,8 +48,6 @@ VALUESTOCK_MODULES = {Path(filename).stem for filename in REQUIRED_FILES}
 _LATEST_COMMIT_VALUE = None
 _LATEST_COMMIT_TIME = 0.0
 _COMMIT_TTL_SECONDS = 300
-_ANALYSIS_CACHE: dict[tuple[str, str, str], dict[str, Any]] = {}
-_ANALYSIS_CACHE_TTL = 90
 
 
 def _get_latest_commit() -> str:
@@ -92,7 +94,10 @@ def _load_value_stock_engine_for_commit(commit_sha: str):
 
     if missing:
         with ThreadPoolExecutor(max_workers=min(6, len(missing))) as pool:
-            futures = [pool.submit(_download_file, commit_sha, filename, target) for filename, target in missing]
+            futures = [
+                pool.submit(_download_file, commit_sha, filename, target)
+                for filename, target in missing
+            ]
             for future in as_completed(futures):
                 future.result()
 
@@ -133,6 +138,7 @@ def _load_value_stock_engine_for_commit(commit_sha: str):
         return result
 
     engine.load_stock_data = fast_load_stock_data
+
     engine._workos_bridge_load_time = round(time.time() - started, 2)
     return engine
 
@@ -166,23 +172,36 @@ def _get_data_diagnostics(engine=None):
         return {"diagnostic_reader": f"{type(exc).__name__}: {exc}"}
 
 
-def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: str = "自动识别") -> dict[str, Any]:
+_ANALYSIS_CACHE = {}
+_ANALYSIS_CACHE_TTL = 90
+
+
+def run_value_stock_analysis(
+    stock_code: str,
+    peer_input: str = "",
+    override: str = "自动识别"
+) -> dict[str, Any]:
     started = time.time()
     code = str(stock_code).strip()
-    cache_key = (code, str(peer_input or ""), str(override or "自动识别"))
+    # peer_input 保留参数兼容旧调用，但 Work OS 不再执行同行业比较。
+    cache_key = (code, str(override or "自动识别"))
 
     cached = _ANALYSIS_CACHE.get(cache_key)
     if cached and time.time() - cached["time"] < _ANALYSIS_CACHE_TTL:
         result = dict(cached["result"])
         bridge = dict(result.get("bridge") or {})
-        bridge.update({"cache_hit": True, "elapsed_seconds": round(time.time() - started, 2)})
+        bridge.update({
+            "cache_hit": True,
+            "elapsed_seconds": round(time.time() - started, 2),
+        })
         result["bridge"] = bridge
         return result
 
     try:
         engine, commit_sha = _load_value_stock_engine()
+        load_time = getattr(engine, "_workos_bridge_load_time", 0.0)
         analysis_started = time.time()
-        result = engine.analyze_stock(code, peer_input=peer_input, override=override)
+        result = engine.analyze_stock(code, peer_input="", override=override)
         analysis_time = round(time.time() - analysis_started, 2)
 
         if isinstance(result, dict):
@@ -191,19 +210,18 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
             result["source_commit"] = commit_sha
             result["diagnostics"] = _get_data_diagnostics(engine)
             result["bridge"] = {
-                "version": "V2.1.0",
+                "version": "V2.0.1",
                 "engine_cached": True,
                 "cache_hit": False,
+                "peer_comparison_enabled": False,
                 "full_analysis_retry": False,
                 "data_retry_delegated_to_valuestock": True,
                 "parallel_data_prefetch": True,
-                "peer_comparison": False,
                 "source_repo": REPO,
                 "data_score": score,
-                "engine_load_seconds": getattr(engine, "_workos_bridge_load_time", 0.0),
+                "engine_load_seconds": load_time,
                 "analysis_seconds": analysis_time,
                 "elapsed_seconds": round(time.time() - started, 2),
-                "optimization": "peer comparison removed + target data parallel + cached repeat analysis",
             }
             _ANALYSIS_CACHE[cache_key] = {"time": time.time(), "result": result}
         return result
@@ -213,10 +231,10 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
             "error": f"ValueStock AI共享引擎调用失败：{type(exc).__name__}: {exc}",
             "diagnostics": {"bridge_error": f"{type(exc).__name__}: {exc}"},
             "bridge": {
-                "version": "V2.1.0",
+                "version": "V2.0.1",
                 "engine_cached": True,
+                "peer_comparison_enabled": False,
                 "parallel_data_prefetch": True,
-                "peer_comparison": False,
                 "source_repo": REPO,
                 "elapsed_seconds": round(time.time() - started, 2),
             },
