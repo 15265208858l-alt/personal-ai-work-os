@@ -1,11 +1,11 @@
 # =========================================================
 # Personal AI Work OS
-# Execution Engine V1.8.0
+# Execution Engine V1.8.1
 # =========================================================
 
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
-from gold_agent import analyze_gold_market
+from gold_agent import analyze_gold_market, render_gold_result
 
 
 def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None):
@@ -62,8 +62,16 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
     elif agent == "gold_agent":
         try:
             gold_result = analyze_gold_market()
+            # 旧 app.py 对非股票Agent只有通用框架展示；这里直接把黄金Agent
+            # 的专业结果渲染到当前 Streamlit 执行流中，保持主界面无需大改。
+            render_gold_result(gold_result)
         except Exception as exc:
             gold_result = {"success": False, "error": f"黄金宏观Agent调用异常：{type(exc).__name__}: {exc}"}
+            try:
+                import streamlit as st
+                st.error(gold_result["error"])
+            except Exception:
+                pass
 
     results = []
     for task in tasks:
