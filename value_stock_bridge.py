@@ -1,8 +1,14 @@
 # =========================================================
 # Personal AI Work OS
-# ValueStock AI Bridge V2.0.3
+# ValueStock AI Bridge V2.1.0
 # =========================================================
-# Work OS 不运行同行比较；peer_compare / relative_valuation 仅作为兼容依赖。
+# 核心修复：
+# 1. 运行时不再访问 api.github.com，彻底消除 GitHub API ReadTimeout。
+# 2. 直接从 raw.githubusercontent.com/main 读取 ValueStock 模块。
+# 3. 保留旧版 peer_compare / relative_valuation 作为兼容依赖，避免历史 import 报错。
+# 4. Work OS 仍然关闭同行业比较，不执行同行数据分析。
+# 5. 保留并行数据、引擎缓存、90秒重复分析缓存。
+# =========================================================
 
 from __future__ import annotations
 
@@ -18,10 +24,11 @@ import requests
 
 REPO = "15265208858l-alt/value-stock-ai"
 BRANCH = "main"
-BRIDGE_VERSION = "V2.0.3"
+BRIDGE_VERSION = "V2.1.0"
+SOURCE_TAG = "main"
 CACHE_ROOT = Path(".value_stock_cache")
 
-# 为兼容不同历史版本的 analysis_engine：保留旧依赖文件，但不执行同行比较。
+# 保留旧版 import 依赖，但不执行同行比较。
 REQUIRED_FILES = (
     "analysis_engine.py", "data.py", "financial.py", "risk.py", "valuation.py",
     "adaptive_valuation.py", "earnings_basis.py", "growth_quality.py",
@@ -31,33 +38,27 @@ REQUIRED_FILES = (
 VALUESTOCK_MODULES = {Path(filename).stem for filename in REQUIRED_FILES}
 
 
-def _get_latest_commit() -> str:
-    url = f"https://api.github.com/repos/{REPO}/git/ref/heads/{BRANCH}"
-    response = requests.get(url, timeout=8)
-    response.raise_for_status()
-    return response.json()["object"]["sha"]
-
-
-def _download_file(commit_sha: str, filename: str, target: Path) -> None:
-    raw_url = f"https://raw.githubusercontent.com/{REPO}/{commit_sha}/{filename}"
+def _download_file(filename: str, target: Path) -> None:
+    raw_url = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/{filename}"
     last_error = None
-    for attempt in range(2):
+    for attempt in range(3):
         try:
-            response = requests.get(raw_url, timeout=12)
+            response = requests.get(raw_url, timeout=15)
             response.raise_for_status()
             target.write_text(response.text, encoding="utf-8")
             return
         except Exception as exc:
             last_error = exc
-            if attempt == 0:
-                time.sleep(0.2)
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
     raise RuntimeError(f"下载 ValueStock 模块 {filename} 失败：{last_error}")
 
 
-@lru_cache(maxsize=2)
-def _load_value_stock_engine_for_commit(commit_sha: str):
+@lru_cache(maxsize=1)
+def _load_value_stock_engine():
     started = time.time()
-    cache_dir = CACHE_ROOT / f"{BRIDGE_VERSION}_{commit_sha[:12]}"
+    # 用固定 Bridge 版本 + main 作为缓存键；不再请求 GitHub API 查询 commit。
+    cache_dir = CACHE_ROOT / f"{BRIDGE_VERSION}_{SOURCE_TAG}"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     missing = []
@@ -68,7 +69,7 @@ def _load_value_stock_engine_for_commit(commit_sha: str):
 
     if missing:
         with ThreadPoolExecutor(max_workers=min(8, len(missing))) as pool:
-            futures = [pool.submit(_download_file, commit_sha, filename, target) for filename, target in missing]
+            futures = [pool.submit(_download_file, filename, target) for filename, target in missing]
             for future in as_completed(futures):
                 future.result()
 
@@ -76,11 +77,12 @@ def _load_value_stock_engine_for_commit(commit_sha: str):
     sys.path = [p for p in sys.path if p != path]
     sys.path.insert(0, path)
 
+    # 清掉可能来自旧缓存的顶层 ValueStock 模块，保证全部来自同一目录。
     for name in VALUESTOCK_MODULES:
         sys.modules.pop(name, None)
     importlib.invalidate_caches()
 
-    # 兼容旧版 analysis_engine 的 import 依赖，但不调用任何同行比较函数。
+    # 兼容历史 analysis_engine 的 import 依赖；不执行同行比较函数。
     importlib.import_module("peer_compare")
     importlib.import_module("relative_valuation")
     engine = importlib.import_module("analysis_engine")
@@ -116,11 +118,6 @@ def _load_value_stock_engine_for_commit(commit_sha: str):
     engine._workos_bridge_version = BRIDGE_VERSION
     engine._workos_peer_comparison_enabled = False
     return engine
-
-
-def _load_value_stock_engine():
-    commit_sha = _get_latest_commit()
-    return _load_value_stock_engine_for_commit(commit_sha), commit_sha
 
 
 def _get_data_diagnostics(engine=None):
@@ -162,14 +159,19 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
         return result
 
     try:
-        engine, commit_sha = _load_value_stock_engine()
+        engine = _load_value_stock_engine()
         load_time = getattr(engine, "_workos_bridge_load_time", 0.0)
         analysis_started = time.time()
         result = engine.analyze_stock(code, peer_input="", override=override)
         analysis_time = round(time.time() - analysis_started, 2)
         if isinstance(result, dict):
             dc = result.get("data_center", {})
-            result["source_commit"] = commit_sha
+            result["source"] = {
+                "repo": REPO,
+                "branch": BRANCH,
+                "bridge_version": BRIDGE_VERSION,
+                "engine_file": getattr(engine, "_workos_engine_file", ""),
+            }
             result["diagnostics"] = _get_data_diagnostics(engine)
             result["bridge"] = {
                 "version": BRIDGE_VERSION,
@@ -180,7 +182,6 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
                 "full_analysis_retry": False,
                 "parallel_data_prefetch": True,
                 "source_repo": REPO,
-                "source_engine_file": getattr(engine, "_workos_engine_file", ""),
                 "data_score": dc.get("score", 100) if isinstance(dc, dict) else 100,
                 "engine_load_seconds": load_time,
                 "analysis_seconds": analysis_time,
@@ -188,10 +189,19 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
             }
             _ANALYSIS_CACHE[cache_key] = {"time": time.time(), "result": result}
         return result
+
     except Exception as exc:
         return {
             "success": False,
             "error": f"ValueStock AI共享引擎调用失败：{type(exc).__name__}: {exc}",
-            "diagnostics": {"bridge_error": f"{type(exc).__name__}: {exc}", "bridge_version": BRIDGE_VERSION},
-            "bridge": {"version": BRIDGE_VERSION, "peer_comparison_enabled": False, "elapsed_seconds": round(time.time() - started, 2)},
+            "diagnostics": {
+                "bridge_error": f"{type(exc).__name__}: {exc}",
+                "bridge_version": BRIDGE_VERSION,
+                "source": f"{REPO}/{BRANCH}",
+            },
+            "bridge": {
+                "version": BRIDGE_VERSION,
+                "peer_comparison_enabled": False,
+                "elapsed_seconds": round(time.time() - started, 2),
+            },
         }
