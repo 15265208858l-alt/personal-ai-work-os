@@ -1,12 +1,13 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# Execution Engine V2.1.0
+# Execution Engine V2.2.0
 # =========================================================
 
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
 from gold_macro_engine import analyze_gold_market
 from finance_intelligence_v2 import analyze_finance_market_v2, render_finance_result_v2
+from finance_impact_engine import render_impact
 
 
 def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None, finance_result=None):
@@ -65,6 +66,8 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
         try:
             finance_result = analyze_finance_market_v2()
             render_finance_result_v2(finance_result)
+            if finance_result.get("success"):
+                render_impact(finance_result)
             import streamlit as st
             st.stop()
         except Exception as exc:
