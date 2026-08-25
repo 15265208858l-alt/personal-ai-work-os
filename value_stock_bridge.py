@@ -1,10 +1,6 @@
 # =========================================================
 # Personal AI Work OS
-# ValueStock AI Bridge V1.7
-#
-# 重要架构：Work OS 不再复制 ValueStock AI 的分析逻辑。
-# 直接加载 value-stock-ai/main 的共享 analysis_engine.py。
-# 因此独立版 ValueStock AI 与 Work OS 使用同一套计算口径。
+# ValueStock AI Bridge V1.7.1
 # =========================================================
 
 from __future__ import annotations
@@ -20,10 +16,16 @@ import requests
 REPO = "15265208858l-alt/value-stock-ai"
 BRANCH = "main"
 CACHE_ROOT = Path(".value_stock_cache")
+VALUESTOCK_MODULES = {
+    "analysis_engine", "data", "financial", "risk", "valuation",
+    "adaptive_valuation", "earnings_basis", "growth_quality",
+    "historical_valuation", "peer_compare", "investment_score",
+    "investment_decision", "industry"
+}
 
 
 def _load_value_stock_engine():
-    """按 main 最新 commit 下载共享分析引擎，避免复制分析逻辑。"""
+    """按 ValueStock AI main 最新 commit 加载共享分析引擎。"""
     CACHE_ROOT.mkdir(exist_ok=True)
 
     ref_url = f"https://api.github.com/repos/{REPO}/git/ref/heads/{BRANCH}"
@@ -33,7 +35,6 @@ def _load_value_stock_engine():
     cache_dir = CACHE_ROOT / commit_sha[:12]
     cache_dir.mkdir(exist_ok=True)
 
-    # analysis_engine 依赖 ValueStock AI 的全部核心模块，因此同步下载所有 .py 文件。
     listing_url = f"https://api.github.com/repos/{REPO}/contents/?ref={BRANCH}"
     listing = requests.get(listing_url, timeout=15)
     listing.raise_for_status()
@@ -57,11 +58,14 @@ def _load_value_stock_engine():
     if path not in sys.path:
         sys.path.insert(0, path)
 
+    # Streamlit 是长生命周期进程：如果之前已经加载过 ValueStock 模块，
+    # 单纯 import/reload 可能继续使用旧 commit。这里强制清理，确保每次使用最新源码。
+    for name in VALUESTOCK_MODULES:
+        sys.modules.pop(name, None)
+
     importlib.invalidate_caches()
-    module = importlib.import_module("analysis_engine")
-    # 防止 Streamlit 热更新时继续复用旧模块。
-    module = importlib.reload(module)
-    return module, commit_sha
+    engine = importlib.import_module("analysis_engine")
+    return engine, commit_sha
 
 
 def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: str = "自动识别") -> dict[str, Any]:
@@ -75,5 +79,5 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
     except Exception as exc:
         return {
             "success": False,
-            "error": f"ValueStock AI 共享引擎调用失败：{type(exc).__name__}: {exc}",
+            "error": f"ValueStock AI共享引擎调用失败：{type(exc).__name__}: {exc}",
         }
