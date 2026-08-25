@@ -1,9 +1,9 @@
 # =========================================================
 # Personal AI Work OS
-# Execution Engine V1.6.1
+# Execution Engine V1.7.0
 # =========================================================
 
-from data_provider import normalize_stock_code, get_stock_quote
+from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
 
 
@@ -35,7 +35,8 @@ def execute_task(task, user_request, market_data=None, value_stock_result=None):
 def execute_tasks(tasks, user_request, route_result=None, **kwargs):
     """根据 Router 的 agent 决定调用哪个专业引擎。
 
-    同时兼容旧版调用方式，避免 Streamlit 热更新期间因参数名变化导致应用崩溃。
+    ValueStock 已经会一次性返回实时行情，因此 Work OS 不再先调用
+    data_provider.get_stock_quote() 做重复请求，减少一次外部数据访问。
     """
     if route_result is None:
         route_result = kwargs.get("route_result") or {}
@@ -44,13 +45,14 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
     value_stock_result = None
     agent = route_result.get("agent")
 
-    # 只有明确路由到 ValueStock AI 时才启动股票价值投资引擎。
     if agent == "value_stock_agent":
         try:
             code = normalize_stock_code(user_request)
             if code:
-                market_data = get_stock_quote(code)
                 value_stock_result = run_value_stock_analysis(code)
+                # UI 仍保留 market_data 字段兼容旧版本，但直接复用 ValueStock 返回的行情。
+                if isinstance(value_stock_result, dict):
+                    market_data = value_stock_result.get("market")
             else:
                 market_data = {
                     "success": False,
@@ -61,7 +63,6 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
                     "error": "未识别到A股股票名称或6位股票代码，未启动 ValueStock AI。"
                 }
         except Exception as exc:
-            # 专业引擎出错时不要让整个 Work OS 崩溃，转成可读的执行结果。
             market_data = {
                 "success": False,
                 "error": f"行情数据获取异常：{type(exc).__name__}"
