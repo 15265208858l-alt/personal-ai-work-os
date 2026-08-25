@@ -1,6 +1,6 @@
 # =========================================================
 # Personal AI Work OS
-# AI Task Router V1.6
+# AI Task Router V1.6.2
 # =========================================================
 
 MODULES = {
@@ -24,9 +24,8 @@ INVESTMENT_RISKS = [
     "利润增长质量", "关联交易风险", "管理层及治理风险"
 ]
 
-# 高优先级路由：先判断是否属于专业股票价值投资任务。
 STOCK_KEYWORDS = [
-    "值得投资", "值不值得买", "值得买吗", "是否值得", "投资价值", "价值投资",
+    "分析", "值得投资", "值不值得买", "值得买吗", "是否值得", "投资价值", "价值投资",
     "合理价", "合理价格", "建仓价", "重仓价", "高估价", "低估", "高估",
     "综合投资评分", "财务质量", "同行比较", "同行竞争力", "估值", "基本面",
     "roe", "pe", "pb", "现金流", "应收账款", "存货", "商誉", "偿债"
@@ -47,13 +46,22 @@ KEYWORDS = {
 }
 
 
-def is_stock_value_investment_task(task):
+def has_stock_identifier(task):
     if not task:
         return False
     text = task.lower()
-    has_stock_hint = any(x.lower() in text for x in STOCK_NAME_HINTS) or any(x in text for x in ["股票", "a股", "个股", "上市公司"])
-    has_value_hint = any(x.lower() in text for x in STOCK_KEYWORDS)
-    return has_stock_hint and has_value_hint
+    if any(name.lower() in text for name in STOCK_NAME_HINTS):
+        return True
+    if any(x in text for x in ["股票", "a股", "个股", "上市公司"]):
+        return True
+    import re
+    return bool(re.search(r"(?<!\d)\d{6}(?!\d)", text))
+
+
+def is_stock_value_investment_task(task):
+    if not task:
+        return False
+    return has_stock_identifier(task) and any(x.lower() in task.lower() for x in STOCK_KEYWORDS)
 
 
 def classify_task(task):
@@ -77,8 +85,8 @@ def analyze_investment_task(task):
     if "黄金" in text:
         result["sub_type"] = "黄金分析"
         result["agent"] = "gold_agent"
-    elif any(word in text for word in ["股票", "a股", "美股", "港股"]):
-        result["sub_type"] = "股票分析"
+    elif has_stock_identifier(task):
+        result["sub_type"] = "股票价值投资分析"
         result["agent"] = "value_stock_agent"
     elif any(word in text for word in ["公司", "企业"]):
         result["sub_type"] = "公司基本面分析"
@@ -96,6 +104,11 @@ def route_task(task):
         "module_name": MODULES.get(module, {"name": "🧠 AI总控台", "description": "无法自动识别的任务"})["name"],
         "task": task
     }
+    # 直接出现股票名称/代码时，也允许进入投资中心，避免只输入“分析美的集团”时被错误降级。
+    if module != "investment" and has_stock_identifier(task):
+        module = "investment"
+        result["module"] = module
+        result["module_name"] = MODULES[module]["name"]
     if module == "investment":
         result.update(analyze_investment_task(task))
     return result
