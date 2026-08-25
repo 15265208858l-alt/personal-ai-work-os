@@ -1,4 +1,4 @@
-# 刘强 · Personal AI Work OS — Opportunity Engine V3.0
+# 刘强 · Personal AI Work OS — Opportunity Engine V3.1
 from __future__ import annotations
 from typing import Any
 
@@ -44,43 +44,47 @@ def _score(asset,f):
     action="重点关注，等待触发条件后分批布局" if s>=70 else "观察，等待价格/宏观信号确认" if s>=60 else "暂不主动交易" if s>40 else "降低暴露，等待风险改善"
     return {"asset":asset,"score":s,"direction":direction,"level":level,"evidence":evidence[:5],"risks":risks[:5],"triggers":triggers[:5],"action":action}
 
-def _price_plan(asset, row, f):
-    p=_num(_asset(f, "黄金期货" if asset=="黄金" else asset).get("price"))
+def _price_plan(asset,f):
+    source="黄金期货" if asset=="黄金" else asset
+    p=_num(_asset(f,source).get("price"))
     if p is None and asset=="黄金": p=_num(_asset(f,"黄金").get("price"))
-    if p is None: return {"current":None,"plan":"当前数据没有可靠价格，不生成虚构价位。"}
-    ch=_num(_asset(f,"黄金期货" if asset=="黄金" else asset).get("change_20d"))
+    if p is None: return {"current":None,"plan":"当前没有可靠价格，不生成虚构价位。"}
     if asset=="黄金":
-        # Use volatility-aware zones only when price and 20d change exist; never claim exact support without a real technical series.
-        pull1=round(p*0.985,2); pull2=round(p*0.97,2); breakout=round(p*1.01,2); invalid=round(p*0.97,2)
-        return {"current":p,"plan":f"回撤观察区：{pull1}–{pull2}；突破确认参考：{breakout}；趋势保护参考：{invalid}。这些是模型区间，不是技术位。"}
-    return {"current":p,"plan":"当前价格可用，但本版本不在缺少完整技术序列时虚构支撑/压力位。"}
+        return {"current":p,"plan":f"回撤观察区：{round(p*0.985,2)}–{round(p*0.97,2)}；突破确认参考：{round(p*1.01,2)}；趋势保护参考：{round(p*0.97,2)}（模型区间，非官方技术位）。"}
+    return {"current":p,"plan":"当前价格可用；在缺少完整技术序列时不虚构支撑/压力位。"}
 
 def analyze_opportunities(finance_result:dict[str,Any]):
     rows=[]
     for a in ASSETS:
-        r=_score(a,finance_result); r["price_plan"]=_price_plan(a,r,finance_result); rows.append(r)
+        r=_score(a,finance_result); r["price_plan"]=_price_plan(a,finance_result); rows.append(r)
     ranked=sorted(rows,key=lambda x:x["score"],reverse=True)
-    return {"version":"V3.0","assets":rows,"top_opportunities":[x for x in ranked if x["score"]>=60][:3],"top_risks":[x for x in ranked if x["score"]<=40][:3],"confidence":finance_result.get("confidence",0)}
+    return {"version":"V3.1","assets":rows,"top_opportunities":[x for x in ranked if x["score"]>=60][:3],"top_risks":[x for x in ranked if x["score"]<=40][:3],"confidence":finance_result.get("confidence",0)}
 
-def render_opportunities(finance_result:dict[str,Any])->None:
+def render_opportunities(data:dict[str,Any])->None:
     import streamlit as st
-    r=analyze_opportunities(finance_result)
-    st.markdown("## 🎯 投资机会雷达 V3.0")
-    st.caption(f"方向评分基于权威/专业新闻、宏观与市场趋势；置信度 {r['confidence']}%。评分不是收益率预测。")
-    if r["top_opportunities"]:
+    # executor 旧流程会先调用 analyze_opportunities，再把“已计算结果”传进来。
+    # 如果已经存在 assets/top_opportunities，则直接渲染，避免二次计算导致全部变成 50/100。
+    if isinstance(data,dict) and isinstance(data.get("assets"),list) and "top_opportunities" in data:
+        r=data
+    else:
+        r=analyze_opportunities(data)
+    st.markdown(f"## 🎯 投资机会雷达 {r.get('version','V3.1')}")
+    st.caption(f"方向评分基于权威/专业新闻、宏观与市场趋势；置信度 {r.get('confidence',0)}%。评分不是收益率预测。")
+    if r.get("top_opportunities"):
         st.markdown("### 🔥 今日重点机会")
         for x in r["top_opportunities"]:
-            st.markdown(f"### {x['level']} {x['asset']}｜{x['direction']}｜{x['score']}/100")
-            st.write(f"**操作思路：** {x['action']}")
-            if x['price_plan']['current'] is not None: st.write(f"**当前价格：** {x['price_plan']['current']}")
-            st.write(f"**价格计划：** {x['price_plan']['plan']}")
-            if x['evidence']: st.write("**核心证据：** "+"；".join(x['evidence']))
-            if x['triggers']: st.write("**触发条件：** "+"；".join(x['triggers']))
-            if x['risks']: st.write("**主要风险：** "+"；".join(x['risks']))
+            st.markdown(f"### {x.get('level','⭐⭐⭐')} {x['asset']}｜{x['direction']}｜{x['score']}/100")
+            st.write(f"**操作思路：** {x.get('action','观察，等待确认')}")
+            pp=x.get("price_plan",{})
+            if pp.get("current") is not None: st.write(f"**当前价格：** {pp['current']}")
+            st.write(f"**价格计划：** {pp.get('plan','当前没有可靠价格，不生成虚构价位。')}")
+            if x.get('evidence'): st.write("**核心证据：** "+"；".join(x['evidence']))
+            if x.get('triggers'): st.write("**触发条件：** "+"；".join(x['triggers']))
+            if x.get('risks'): st.write("**主要风险：** "+"；".join(x['risks']))
             st.divider()
     else: st.info("当前没有达到观察阈值的资产机会，系统选择不强行推荐。")
     st.markdown("### 📊 资产机会排名")
-    for x in r["assets"]: st.write(f"{x['level']} **{x['asset']}**｜{x['direction']}｜{x['score']}/100｜{x['action']}")
-    if r["top_risks"]:
+    for x in r.get("assets",[]): st.write(f"{x.get('level','⭐⭐⭐')} **{x['asset']}**｜{x['direction']}｜{x['score']}/100｜{x.get('action','观察')}")
+    if r.get("top_risks"):
         st.markdown("### 🚨 风险优先级")
-        for x in r["top_risks"]: st.warning(f"{x['asset']}｜{x['score']}/100："+"；".join(x['risks']))
+        for x in r["top_risks"]: st.warning(f"{x['asset']}｜{x['score']}/100："+"；".join(x.get('risks',[])))
