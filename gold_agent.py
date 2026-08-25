@@ -1,8 +1,8 @@
 # =========================================================
 # Personal AI Work OS
-# Gold Macro Research Agent V2.0
+# Gold Macro Research Agent V2.0.1
 # =========================================================
-# 综合维度：黄金、美元、美国10Y、2Y利率预期代理、CPI、就业、地缘政治、趋势
+# 综合维度：黄金、美元、美国10Y、2Y利率预期代理、Fed政策状态、CPI、就业、地缘政治、趋势
 # 数据源：Yahoo Finance、BLS Public API、Google News RSS；单项失败不影响整体研究。
 # =========================================================
 
@@ -17,7 +17,7 @@ from typing import Any
 import requests
 
 _YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{}"
-_BLS = "https://api.bls.gov/publicAPI/v2/timeseries/data/{}"
+_BLS = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 _NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 HEADERS = {"User-Agent": "Mozilla/5.0 Personal-AI-Work-OS/2.0"}
 
@@ -28,8 +28,8 @@ SYMBOLS = {
     "us2y": "^UST2Y",
 }
 BLS_SERIES = {
-    "cpi": "CUUR0000SA0",        # CPI-U, U.S. city average, all items
-    "nonfarm": "CES0000000001",  # total nonfarm payroll
+    "cpi": "CUUR0000SA0",
+    "nonfarm": "CES0000000001",
     "unemployment": "LNS14000000",
 }
 NEWS_QUERIES = [
@@ -37,6 +37,12 @@ NEWS_QUERIES = [
     "gold Russia Ukraine sanctions ceasefire",
     "gold geopolitics central bank conflict",
 ]
+
+# 最新可验证的FOMC状态：2026-07-30生效目标区间3.50%-3.75%，下一次会议2026-09-15/16。
+FED_TARGET_LOW = 3.50
+FED_TARGET_HIGH = 3.75
+FED_TARGET_MID = (FED_TARGET_LOW + FED_TARGET_HIGH) / 2
+FED_NEXT_MEETING = "2026-09-15/16"
 
 
 def _retry(fn, attempts=2):
@@ -69,7 +75,7 @@ def _yahoo(symbol, range_="1y"):
 
 
 def _bls(series_id, start_year, end_year):
-    r = requests.post(_BLS.format(series_id), json={"seriesid": [series_id], "startyear": str(start_year), "endyear": str(end_year)}, headers={**HEADERS, "Content-Type": "application/json"}, timeout=10)
+    r = requests.post(_BLS, json={"seriesid": [series_id], "startyear": str(start_year), "endyear": str(end_year)}, headers={**HEADERS, "Content-Type": "application/json"}, timeout=10)
     r.raise_for_status()
     series = r.json().get("Results", {}).get("series") or []
     if not series:
@@ -147,7 +153,6 @@ def _geopolitics_score(headlines):
 
 
 def _rate_expectation(us2y, us10y):
-    # 2Y收益率作为市场利率预期代理，不冒充CME FedWatch概率。
     if us2y is None:
         return {"label": "数据不足", "score": 50}
     if us2y >= 4.25:
@@ -187,7 +192,6 @@ def analyze_gold_market() -> dict[str, Any]:
     year = time.gmtime().tm_year
     raw = {}
     errors = {}
-
     jobs = {}
     with ThreadPoolExecutor(max_workers=10) as pool:
         for key, symbol in SYMBOLS.items():
@@ -210,7 +214,7 @@ def analyze_gold_market() -> dict[str, Any]:
     gold, dxy = raw.get("gold") or [], raw.get("dxy") or []
     us10y, us2y = raw.get("us10y") or [], raw.get("us2y") or []
     if not gold:
-        return {"success": False, "agent": "gold_agent", "version": "V2.0", "error": "黄金价格数据暂时无法获取。", "diagnostics": errors, "elapsed_seconds": round(time.time()-started, 2)}
+        return {"success": False, "agent": "gold_agent", "version": "V2.0.1", "error": "黄金价格数据暂时无法获取。", "diagnostics": errors, "elapsed_seconds": round(time.time()-started, 2)}
 
     cpi, nfp, unemp = raw.get("cpi") or [], raw.get("nonfarm") or [], raw.get("unemployment") or []
     cpi_latest, cpi_prev = _latest_bls(cpi), _previous_bls(cpi)
@@ -233,29 +237,18 @@ def analyze_gold_market() -> dict[str, Any]:
     if us10y and (_pct(us10y, 20) or 0) > 2: risk_flags.append("美国长端收益率快速上升")
     if payroll_delta is not None and payroll_delta > 0.2: risk_flags.append("就业仍偏强，降息预期可能反复")
     if geop_score >= 70: risk_flags.append("地缘冲突升级可能带来油价/通胀冲击")
-
     stance = "趋势偏多，但不建议追涨；优先等待回撤确认。" if outlook == "偏多" and _trend(gold) == "偏强" else "宏观环境偏利多，可继续持有，新增仓位宜分批。" if outlook == "偏多" else "宏观逆风增强，控制仓位，等待美元/利率改善。" if outlook == "偏空" else "多空因素交织，适合区间思维，等待关键宏观数据验证。"
 
     return {
         "success": True,
         "agent": "gold_agent",
-        "version": "V2.0",
+        "version": "V2.0.1",
         "as_of": int(gold[-1][0]),
-        "market": {
-            "gold": gold[-1][1],
-            "gold_5d_pct": _pct(gold, 5),
-            "gold_20d_pct": _pct(gold, 20),
-            "gold_trend": _trend(gold),
-            "dxy": dxy[-1][1] if dxy else None,
-            "dxy_20d_pct": _pct(dxy, 20) if dxy else None,
-            "us10y": us10y[-1][1] if us10y else None,
-            "us10y_20d_pct": _pct(us10y, 20) if us10y else None,
-            "us2y": us2y[-1][1] if us2y else None,
-        },
+        "market": {"gold": gold[-1][1], "gold_5d_pct": _pct(gold, 5), "gold_20d_pct": _pct(gold, 20), "gold_trend": _trend(gold), "dxy": dxy[-1][1] if dxy else None, "dxy_20d_pct": _pct(dxy, 20) if dxy else None, "us10y": us10y[-1][1] if us10y else None, "us10y_20d_pct": _pct(us10y, 20) if us10y else None, "us2y": us2y[-1][1] if us2y else None},
         "macro": {
-            "fed": {"expectation_proxy": rate["label"], "score": rate["score"], "method": "2Y美国国债收益率代理，不等同CME FedWatch概率"},
+            "fed": {"target_range": f"{FED_TARGET_LOW:.2f}-{FED_TARGET_HIGH:.2f}%", "target_mid": FED_TARGET_MID, "next_meeting": FED_NEXT_MEETING, "expectation_proxy": rate["label"], "score": rate["score"], "method": "2Y美国国债收益率代理，不等同CME FedWatch概率"},
             "cpi": {"latest": cpi_latest, "mom_pct": cpi_mom},
-            "employment": {"nonfarm": nfp_latest, "nonfarm_change_thousand": payroll_delta, "unemployment": unemp_latest},
+            "employment": {"nonfarm": nfp_latest, "nonfarm_change_million": payroll_delta, "unemployment": unemp_latest},
             "geopolitics": {"score": geop_score, "headlines": headlines[:10]},
         },
         "score": score,
@@ -278,7 +271,6 @@ def render_gold_result(result: dict[str, Any]) -> None:
         if result.get("diagnostics"):
             st.json(result["diagnostics"])
         return
-
     market = result.get("market") or {}
     macro = result.get("macro") or {}
     fed = macro.get("fed") or {}
@@ -295,13 +287,19 @@ def render_gold_result(result: dict[str, Any]) -> None:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("2Y利率", "暂无" if market.get("us2y") is None else f"{market['us2y']:.2f}%")
     c2.metric("Fed预期代理", fed.get("expectation_proxy", "暂无"))
-    c3.metric("CPI最新值", "暂无" if not cpi.get("latest") else f"{cpi['latest']['value']:.1f}")
+    c3.metric("Fed目标区间", fed.get("target_range", "暂无"))
+    c4.metric("下次FOMC", fed.get("next_meeting", "暂无"))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("CPI最新值", "暂无" if not cpi.get("latest") else f"{cpi['latest']['value']:.1f}")
+    c2.metric("CPI环比", "暂无" if cpi.get("mom_pct") is None else f"{cpi['mom_pct']:.2f}%")
+    c3.metric("最新非农", "暂无" if not emp.get("nonfarm") else f"{emp['nonfarm']['value']:.0f}千")
     c4.metric("失业率", "暂无" if not emp.get("unemployment") else f"{emp['unemployment']['value']:.1f}%")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("黄金20日涨跌", "暂无" if market.get("gold_20d_pct") is None else f"{market['gold_20d_pct']:.2f}%")
     c2.metric("美元20日涨跌", "暂无" if market.get("dxy_20d_pct") is None else f"{market['dxy_20d_pct']:.2f}%")
-    c3.metric("10Y 20日变化", "暂无" if market.get("us10y_20d_pct") is None else f"{market['us10y_20d_pct']:.2f}%")
+    c3.metric("10Y20日变化", "暂无" if market.get("us10y_20d_pct") is None else f"{market['us10y_20d_pct']:.2f}%")
     c4.metric("综合宏观评分", f"{result.get('score', '暂无')}/100")
 
     outlook = result.get("outlook", "暂无")
