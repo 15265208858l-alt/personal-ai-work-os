@@ -1,12 +1,12 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# Execution Engine V2.0.0
+# Execution Engine V2.0.1
 # =========================================================
 
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
-from gold_macro_engine import analyze_gold_market, render_gold_result
-from finance_intelligence_agent import analyze_finance_market
+from gold_macro_engine import analyze_gold_market
+from finance_intelligence_agent import analyze_finance_market, render_finance_result
 
 
 def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None, finance_result=None):
@@ -44,8 +44,18 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
     elif agent == "finance_intelligence_agent":
         try:
             finance_result = analyze_finance_market()
+            render_finance_result(finance_result)
+            # 当前 app.py 尚未单独增加 Finance UI 分支；在这里直接完成专业结果渲染。
+            import streamlit as st
+            st.stop()
         except Exception as exc:
             finance_result = {"success": False, "error": f"财经情报Agent调用异常：{type(exc).__name__}: {exc}"}
+            try:
+                import streamlit as st
+                st.error(finance_result["error"])
+                st.stop()
+            except Exception:
+                pass
     return [execute_task(task, user_request, market_data, value_stock_result, gold_result, finance_result) for task in tasks]
 
 
