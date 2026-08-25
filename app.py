@@ -1,6 +1,8 @@
 import streamlit as st
 
 from router import route_task
+from task_engine import decompose_task, get_task_summary
+from executor import execute_tasks, get_execution_summary
 
 
 # =========================================================
@@ -20,10 +22,10 @@ st.set_page_config(
 
 st.title("🧠 Personal AI Work OS")
 
-st.subheader("个人 AI 工作操作系统 V1.1")
+st.subheader("个人 AI 工作操作系统 V1.3")
 
 st.caption(
-    "AI总控台 · 智能任务路由 · 投资分析 · 文件管理 · 项目管理"
+    "AI总控台 · 智能任务路由 · 任务拆解 · 任务执行 · 投资分析"
 )
 
 
@@ -36,7 +38,6 @@ st.markdown("## 🧭 AI工作模块")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-
     st.info(
         """
         ### 📁 文件中心
@@ -49,7 +50,6 @@ with col1:
     )
 
 with col2:
-
     st.success(
         """
         ### 📈 投资中心
@@ -63,7 +63,6 @@ with col2:
     )
 
 with col3:
-
     st.warning(
         """
         ### 📰 财经情报
@@ -76,11 +75,9 @@ with col3:
         """
     )
 
-
 col1, col2, col3 = st.columns(3)
 
 with col1:
-
     st.info(
         """
         ### 🧠 AI学习
@@ -94,7 +91,6 @@ with col1:
     )
 
 with col2:
-
     st.success(
         """
         ### 📋 任务中心
@@ -107,7 +103,6 @@ with col2:
     )
 
 with col3:
-
     st.warning(
         """
         ### 🚀 项目中心
@@ -140,71 +135,131 @@ user_task = st.text_area(
 # 执行
 # =========================================================
 
-if st.button(
-    "🚀 开始执行",
-    type="primary"
-):
+if st.button("🚀 开始执行", type="primary"):
 
     if not user_task.strip():
-
         st.warning("请先输入任务。")
 
     else:
-
         result = route_task(user_task)
 
         st.markdown("## 🔎 AI任务解析")
 
-        st.write(
-            f"**任务：** {result['task']}"
-        )
-
-        st.write(
-            f"**任务模块：** {result['module_name']}"
-        )
-
+        st.write(f"**任务：** {result['task']}")
+        st.write(f"**任务模块：** {result['module_name']}")
 
         # =================================================
-        # 投资任务
+        # 支持任务拆解和执行的模块
         # =================================================
 
-        if result["module"] == "investment":
+        if result["module"] in [
+            "investment",
+            "project",
+            "learning"
+        ]:
 
             st.success(
                 f"已进入：{result['module_name']}"
             )
 
-            st.write(
-                f"**分析类型：** {result['sub_type']}"
-            )
-
-            st.markdown(
-                "### 📈 长期价值投资10步"
-            )
-
-            for i, item in enumerate(
-                result["workflow"],
-                start=1
-            ):
-
+            if result["module"] == "investment":
                 st.write(
-                    f"{i}. {item}"
+                    f"**分析类型：** {result['sub_type']}"
                 )
 
+            # =================================================
+            # 任务拆解
+            # =================================================
 
-            st.markdown(
-                "### 🚨 财务风险扫描"
-            )
+            tasks = decompose_task(result["module"])
 
-            for risk in result["risk_scan"]:
+            if tasks:
 
-                st.write(
-                    f"⚠️ {risk}"
+                st.markdown("### 🧩 AI任务拆解")
+
+                summary = get_task_summary(tasks)
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.metric("总任务", summary["total"])
+
+                with col2:
+                    st.metric("已完成", summary["completed"])
+
+                with col3:
+                    st.metric("待执行", summary["pending"])
+
+                st.divider()
+
+                for task in tasks:
+                    st.write(
+                        f"**{task['id']}**  "
+                        f"{task['name']}  "
+                        f"— {task['status']}"
+                    )
+
+                # =================================================
+                # 任务执行
+                # =================================================
+
+                st.markdown("### ⚙️ AI任务执行")
+
+                results = execute_tasks(
+                    tasks,
+                    user_task
                 )
 
+                execution_summary = get_execution_summary(results)
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.metric(
+                        "执行任务",
+                        execution_summary["total"]
+                    )
+
+                with col2:
+                    st.metric(
+                        "执行完成",
+                        execution_summary["completed"]
+                    )
+
+                with col3:
+                    st.metric(
+                        "待开发",
+                        execution_summary["pending"]
+                    )
+
+                st.divider()
+
+                for execution_result in results:
+
+                    if execution_result["status"] == "执行完成":
+
+                        st.success(
+                            f"✅ {execution_result['task_id']} "
+                            f"{execution_result['task_name']}"
+                        )
+
+                        st.caption(
+                            execution_result["message"]
+                        )
+
+                    else:
+
+                        st.warning(
+                            f"⏳ {execution_result['task_id']} "
+                            f"{execution_result['task_name']}"
+                        )
+
+                        st.caption(
+                            execution_result["message"]
+                        )
 
         # =================================================
-        # 其他任务
+        # 暂未接入任务执行的模块
         # =================================================
 
         else:
@@ -214,7 +269,7 @@ if st.button(
             )
 
             st.write(
-                "下一阶段将为该模块接入真正的工作能力。"
+                "该模块的具体执行能力将在后续版本接入。"
             )
 
 
@@ -228,7 +283,7 @@ st.markdown("## 🚀 当前项目")
 
 projects = [
     ("ValueStock AI", "🟢 进行中"),
-    ("Personal AI Work OS", "🔵 V1.1"),
+    ("Personal AI Work OS", "🔵 V1.3"),
     ("AI学习系统", "🔵 进行中"),
     ("AI网店", "🟡 规划中"),
     ("AI视频", "🟡 规划中")
