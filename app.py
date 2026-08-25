@@ -145,7 +145,7 @@ if st.button("🚀 开始执行", type="primary"):
                         st.caption(execution_result["message"])
                     else:
                         st.warning(f"⏳ {execution_result['task_id']} {execution_result['task_name']}")
-                        st.caption(execution_result["message"])")
+                        st.caption(execution_result["message"])
         else:
             st.info("任务已经成功路由。")
             st.write("该模块的具体执行能力将在后续版本接入。")
