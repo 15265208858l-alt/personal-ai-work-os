@@ -1,13 +1,9 @@
 # =========================================================
 # Personal AI Work OS
-# ValueStock AI Bridge V2.1.0
+# ValueStock AI Bridge V2.1.1
 # =========================================================
-# 核心修复：
-# 1. 运行时不再访问 api.github.com，彻底消除 GitHub API ReadTimeout。
-# 2. 直接从 raw.githubusercontent.com/main 读取 ValueStock 模块。
-# 3. 保留旧版 peer_compare / relative_valuation 作为兼容依赖，避免历史 import 报错。
-# 4. Work OS 仍然关闭同行业比较，不执行同行数据分析。
-# 5. 保留并行数据、引擎缓存、90秒重复分析缓存。
+# 修复：数据源诊断必须读取本次实际加载的 ValueStock data 模块，
+# 不再依赖 sys.modules['data']，避免与其他 data 模块重名冲突。
 # =========================================================
 
 from __future__ import annotations
@@ -24,11 +20,9 @@ import requests
 
 REPO = "15265208858l-alt/value-stock-ai"
 BRANCH = "main"
-BRIDGE_VERSION = "V2.1.0"
-SOURCE_TAG = "main"
+BRIDGE_VERSION = "V2.1.1"
 CACHE_ROOT = Path(".value_stock_cache")
 
-# 保留旧版 import 依赖，但不执行同行比较。
 REQUIRED_FILES = (
     "analysis_engine.py", "data.py", "financial.py", "risk.py", "valuation.py",
     "adaptive_valuation.py", "earnings_basis.py", "growth_quality.py",
@@ -57,8 +51,7 @@ def _download_file(filename: str, target: Path) -> None:
 @lru_cache(maxsize=1)
 def _load_value_stock_engine():
     started = time.time()
-    # 用固定 Bridge 版本 + main 作为缓存键；不再请求 GitHub API 查询 commit。
-    cache_dir = CACHE_ROOT / f"{BRIDGE_VERSION}_{SOURCE_TAG}"
+    cache_dir = CACHE_ROOT / f"{BRIDGE_VERSION}_main"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     missing = []
@@ -77,12 +70,10 @@ def _load_value_stock_engine():
     sys.path = [p for p in sys.path if p != path]
     sys.path.insert(0, path)
 
-    # 清掉可能来自旧缓存的顶层 ValueStock 模块，保证全部来自同一目录。
     for name in VALUESTOCK_MODULES:
         sys.modules.pop(name, None)
     importlib.invalidate_caches()
 
-    # 兼容历史 analysis_engine 的 import 依赖；不执行同行比较函数。
     importlib.import_module("peer_compare")
     importlib.import_module("relative_valuation")
     engine = importlib.import_module("analysis_engine")
@@ -113,8 +104,10 @@ def _load_value_stock_engine():
         return result
 
     engine.load_stock_data = fast_load_stock_data
-    engine._workos_bridge_load_time = round(time.time() - started, 2)
+    # 保存本次真正加载的 data 模块对象，诊断时直接使用，避免 sys.modules 名称冲突。
+    engine._workos_data_module = data_module
     engine._workos_engine_file = str(getattr(engine, "__file__", ""))
+    engine._workos_bridge_load_time = round(time.time() - started, 2)
     engine._workos_bridge_version = BRIDGE_VERSION
     engine._workos_peer_comparison_enabled = False
     return engine
@@ -122,21 +115,34 @@ def _load_value_stock_engine():
 
 def _get_data_diagnostics(engine=None):
     try:
-        data_module = None
-        if engine is not None:
-            load_fn = getattr(engine, "load_stock_data", None)
-            module_name = getattr(load_fn, "__module__", None)
-            if module_name:
-                data_module = sys.modules.get(module_name)
+        data_module = getattr(engine, "_workos_data_module", None) if engine is not None else None
         if data_module is None:
-            data_module = sys.modules.get("data")
-        if data_module is None:
-            return {"diagnostic_reader": "未找到 ValueStock AI data 模块"}
+            return {"diagnostic_reader": "未找到本次 ValueStock 使用的 data 模块"}
+
         getter = getattr(data_module, "get_data_diagnostics", None)
-        if not callable(getter):
-            return {"diagnostic_reader": "当前 ValueStock data 模块没有 get_data_diagnostics()"}
-        raw = getter()
-        return {str(k): str(v) for k, v in raw.items()} if isinstance(raw, dict) else {"diagnostic_reader": f"诊断结果类型异常：{type(raw).__name__}"}
+        if callable(getter):
+            raw = getter()
+            if isinstance(raw, dict):
+                return {str(k): str(v) for k, v in raw.items()}
+            return {"diagnostic_reader": f"诊断结果类型异常：{type(raw).__name__}"}
+
+        # 兼容旧版 data.py：没有诊断函数时，直接读取底层状态变量。
+        status = getattr(data_module, "_SOURCE_STATUS", {})
+        errors = getattr(data_module, "_LAST_ERRORS", {})
+        result = {}
+        if isinstance(status, dict):
+            result.update({str(k): str(v) for k, v in status.items()})
+        if isinstance(errors, dict):
+            for key, value in errors.items():
+                if str(key) not in result or result[str(key)] in {"失败", "异常"}:
+                    result[str(key)] = str(value)
+        if result:
+            return result
+
+        return {
+            "diagnostic_reader": "本次 ValueStock 数据模块已加载，但没有记录数据源错误。",
+            "data_module": str(getattr(data_module, "__file__", "unknown")),
+        }
     except Exception as exc:
         return {"diagnostic_reader": f"{type(exc).__name__}: {exc}"}
 
@@ -164,6 +170,7 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
         analysis_started = time.time()
         result = engine.analyze_stock(code, peer_input="", override=override)
         analysis_time = round(time.time() - analysis_started, 2)
+
         if isinstance(result, dict):
             dc = result.get("data_center", {})
             result["source"] = {
@@ -171,6 +178,7 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
                 "branch": BRANCH,
                 "bridge_version": BRIDGE_VERSION,
                 "engine_file": getattr(engine, "_workos_engine_file", ""),
+                "data_module_file": str(getattr(getattr(engine, "_workos_data_module", None), "__file__", "")),
             }
             result["diagnostics"] = _get_data_diagnostics(engine)
             result["bridge"] = {
@@ -194,11 +202,7 @@ def run_value_stock_analysis(stock_code: str, peer_input: str = "", override: st
         return {
             "success": False,
             "error": f"ValueStock AI共享引擎调用失败：{type(exc).__name__}: {exc}",
-            "diagnostics": {
-                "bridge_error": f"{type(exc).__name__}: {exc}",
-                "bridge_version": BRIDGE_VERSION,
-                "source": f"{REPO}/{BRANCH}",
-            },
+            "diagnostics": {"bridge_error": f"{type(exc).__name__}: {exc}", "bridge_version": BRIDGE_VERSION},
             "bridge": {
                 "version": BRIDGE_VERSION,
                 "peer_comparison_enabled": False,
