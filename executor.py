@@ -1,6 +1,6 @@
 # =========================================================
 # Personal AI Work OS
-# Execution Engine V1.6
+# Execution Engine V1.6.1
 # =========================================================
 
 from data_provider import normalize_stock_code, get_stock_quote
@@ -32,21 +32,44 @@ def execute_task(task, user_request, market_data=None, value_stock_result=None):
     return result
 
 
-def execute_tasks(tasks, user_request, route_result=None):
-    """根据 Router 的 agent 决定调用哪个专业引擎。"""
+def execute_tasks(tasks, user_request, route_result=None, **kwargs):
+    """根据 Router 的 agent 决定调用哪个专业引擎。
+
+    同时兼容旧版调用方式，避免 Streamlit 热更新期间因参数名变化导致应用崩溃。
+    """
+    if route_result is None:
+        route_result = kwargs.get("route_result") or {}
+
     market_data = None
     value_stock_result = None
-    agent = (route_result or {}).get("agent")
+    agent = route_result.get("agent")
 
     # 只有明确路由到 ValueStock AI 时才启动股票价值投资引擎。
     if agent == "value_stock_agent":
-        code = normalize_stock_code(user_request)
-        if code:
-            market_data = get_stock_quote(code)
-            value_stock_result = run_value_stock_analysis(code)
-        else:
-            market_data = {"success": False, "error": "未识别到A股股票名称或6位股票代码。"}
-            value_stock_result = {"success": False, "error": "未识别到A股股票名称或6位股票代码，未启动 ValueStock AI。"}
+        try:
+            code = normalize_stock_code(user_request)
+            if code:
+                market_data = get_stock_quote(code)
+                value_stock_result = run_value_stock_analysis(code)
+            else:
+                market_data = {
+                    "success": False,
+                    "error": "未识别到A股股票名称或6位股票代码。"
+                }
+                value_stock_result = {
+                    "success": False,
+                    "error": "未识别到A股股票名称或6位股票代码，未启动 ValueStock AI。"
+                }
+        except Exception as exc:
+            # 专业引擎出错时不要让整个 Work OS 崩溃，转成可读的执行结果。
+            market_data = {
+                "success": False,
+                "error": f"行情数据获取异常：{type(exc).__name__}"
+            }
+            value_stock_result = {
+                "success": False,
+                "error": f"ValueStock AI 调用异常：{type(exc).__name__}"
+            }
 
     results = []
     for task in tasks:
