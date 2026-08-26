@@ -1,14 +1,14 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# Execution Engine V2.4
+# Execution Engine V2.5
 # =========================================================
 
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
 from gold_macro_engine import analyze_gold_market
-from finance_intelligence_v2 import analyze_finance_market_v2, render_finance_result_v2
-from opportunity_engine_v52 import analyze_opportunities, render_opportunities
-from investment_cockpit_v60 import build_cockpit, render_cockpit
+from finance_intelligence_v2 import analyze_finance_market_v2
+from opportunity_engine_v52 import analyze_opportunities
+from investment_cockpit_v60 import build_cockpit
 
 
 def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None, finance_result=None):
@@ -46,6 +46,9 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
     value_stock_result = None
     gold_result = None
     finance_result = None
+    opportunity_result = None
+    cockpit_result = None
+    finance_error = None
     agent = route_result.get("agent")
 
     if agent == "value_stock_agent":
@@ -68,35 +71,25 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
             finance_result = analyze_finance_market_v2()
             if not finance_result.get("success"):
                 raise RuntimeError(finance_result.get("error", "财经情报分析失败"))
-
-            # 第一层：权威宏观与新闻情报
-            render_finance_result_v2(finance_result)
-
-            # 第二层：消息 -> 宏观变量 -> 资产影响 -> 行动机会
             opportunity_result = analyze_opportunities(finance_result)
-            render_opportunities(opportunity_result)
-            finance_result["opportunity_analysis"] = opportunity_result
-
-            # 第三层：投资决策驾驶舱
             cockpit_result = build_cockpit(finance_result, opportunity_result)
-            render_cockpit(cockpit_result)
-            finance_result["investment_cockpit"] = cockpit_result
-
-            import streamlit as st
-            st.stop()
         except Exception as exc:
-            finance_result = {"success": False, "error": f"财经情报Agent调用异常：{type(exc).__name__}: {exc}"}
-            try:
-                import streamlit as st
-                st.error(finance_result["error"])
-                st.stop()
-            except Exception:
-                pass
+            finance_error = f"财经情报Agent调用异常：{type(exc).__name__}: {exc}"
 
-    return [
+    results = [
         execute_task(task, user_request, market_data, value_stock_result, gold_result, finance_result)
         for task in tasks
     ]
+
+    # 将财经三层结果挂在第一条任务结果上，供 app.py 统一渲染，避免 st.stop/stuffing 造成页面中断。
+    if results and agent == "finance_intelligence_agent":
+        results[0]["finance_result"] = finance_result
+        results[0]["opportunity_result"] = opportunity_result
+        results[0]["cockpit_result"] = cockpit_result
+        results[0]["finance_error"] = finance_error
+        results[0]["message"] = "财经情报 → 投资机会 → 决策驾驶舱 已完成。"
+
+    return results
 
 
 def get_execution_summary(results):
