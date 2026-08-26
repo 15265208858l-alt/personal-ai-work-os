@@ -1,13 +1,13 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# Execution Engine V2.3.0
+# Execution Engine V2.3.1
 # =========================================================
 
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
 from gold_macro_engine import analyze_gold_market
 from finance_intelligence_v2 import analyze_finance_market_v2, render_finance_result_v2
-from opportunity_engine import analyze_opportunities, render_opportunities
+from opportunity_engine_v52 import analyze_opportunities, render_opportunities
 
 
 def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None, finance_result=None):
@@ -70,7 +70,7 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
 
             # 第一层：权威宏观与新闻情报
             render_finance_result_v2(finance_result)
-            # 第二层：消息 -> 宏观变量 -> 资产影响 -> 机会/风险
+            # 第二层：消息 -> 宏观变量 -> 资产影响 -> 行动机会
             opportunity_result = analyze_opportunities(finance_result)
             render_opportunities(opportunity_result)
             finance_result["opportunity_analysis"] = opportunity_result
