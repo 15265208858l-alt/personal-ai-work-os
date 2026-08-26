@@ -7,14 +7,14 @@ from data_provider import normalize_stock_code
 from gold_agent import render_gold_result
 
 st.set_page_config(
-    page_title="Personal AI Work OS",
+    page_title="刘强 · Personal AI Work OS",
     page_icon="🧠",
     layout="wide",
 )
 
-st.title("🧠 Personal AI Work OS")
-st.subheader("个人 AI 工作操作系统 V2.2")
-st.caption("AI总控台 · 智能任务路由 · 专业Agent调度 · ValueStock AI · Gold Macro Agent")
+st.title("🧠 刘强 · Personal AI Work OS")
+st.subheader("个人 AI 工作操作系统 V2.3")
+st.caption("AI总控台 · 智能任务路由 · 专业Agent调度 · ValueStock AI · Gold Macro Agent · Opportunity Radar V5.0")
 
 
 def as_dict(value):
@@ -102,6 +102,8 @@ if st.button("🚀 开始执行", type="primary"):
     spinner_text = "正在调用 ValueStock AI 专业分析引擎，请稍候……"
     if effective_route.get("agent") == "gold_agent":
         spinner_text = "正在调用黄金综合宏观研究 Agent，请稍候……"
+    elif effective_route.get("agent") == "finance_intelligence_agent":
+        spinner_text = "正在执行全球财经情报与投资机会扫描 V5.0，请稍候……"
 
     with st.spinner(spinner_text):
         results = execute_tasks(tasks, user_task, effective_route)
@@ -243,29 +245,23 @@ if st.button("🚀 开始执行", type="primary"):
         model_name = val_get(model, "name", "model", default=val_get(val, "model_name", default="暂无"))
         model_method = val_get(model, "method", default="")
         st.caption(f"估值模型：{model_name}｜{model_method}")
-        percentile = val_get(hist, "percentile", default=val_get(val, "historical_percentile", default=None))
-        historical_level = val_get(val, "historical_level", default="数据不足")
-        st.write(f"**历史PE分位：** {'暂无' if percentile is None else percentile}%　｜　**历史估值区域：** {historical_level}")
-        gq = val.get("growth_quality")
-        if isinstance(gq, dict):
-            st.write(f"成长质量：**{gq.get('score', '暂无')}/100**　等级：**{gq.get('level', '暂无')}**")
+        percentile = val_get(hist, "percentile", default=val_get(val, "percentile"))
+        if percentile is not None:
+            st.caption(f"历史估值分位：{float(percentile):.1f}%")
 
-        diagnostics = vr.get("diagnostics")
-        if diagnostics:
-            with st.expander("🩺 数据源诊断（出现暂无时优先查看）", expanded=True):
-                st.json(diagnostics)
-        bridge = as_dict(vr.get("bridge"))
-        with st.expander("🧪 技术诊断 / 执行性能", expanded=False):
-            st.json(bridge)
+        peer = as_dict(vr.get("peer_comparison"))
+        if peer:
+            st.markdown("## 🏭 同行业比较")
+            st.write(f"同行评分：{val_get(peer, 'score', default='暂无')}/100")
+            st.write(val_get(peer, "summary", default="暂无"))
+
         with st.expander("🔧 查看后台执行明细", expanded=False):
             for r in results:
                 icon = "✅" if r["status"] == "执行完成" else "⏳"
                 st.write(f"{icon} **{r['task_id']}** {r['task_name']} — {r['message']}")
+        st.stop()
 
-    else:
-        st.markdown("### ⚙️ Agent执行状态")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("执行任务", execution_summary["total"])
-        c2.metric("执行完成", execution_summary["completed"])
-        c3.metric("待开发", execution_summary["pending"])
-        st.info("该专业Agent目前处于框架阶段，后续版本接入真实数据与分析能力。")
+    if effective_route.get("agent") == "finance_intelligence_agent":
+        st.stop()
+
+    st.info("任务已完成基础调度。后续继续扩展对应专业Agent。")
