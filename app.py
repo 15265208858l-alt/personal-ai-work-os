@@ -13,7 +13,7 @@ from portfolio_decision_engine_v1 import render_portfolio_decision
 
 st.set_page_config(page_title="刘强 · Personal AI Work OS", page_icon="🧠", layout="wide")
 st.title("🧠 刘强 · Personal AI Work OS")
-st.subheader("个人 AI 工作操作系统 V2.7")
+st.subheader("个人 AI 工作操作系统 V2.8")
 st.caption("AI总控台 · 财经情报 · 投资机会 V5.2 · 决策驾驶舱 V6.0 · 行业→A股候选 · 深度研究 V1.0 · 组合仓位 V1.0")
 
 def as_dict(value): return value if isinstance(value, dict) else {}
@@ -27,6 +27,15 @@ def val_get(mapping,*keys,default=None):
         if key in mapping and mapping[key] is not None: return mapping[key]
     return default
 
+def is_broad_finance_request(text: str) -> bool:
+    t=(text or "").lower()
+    hints=(
+        "全球财经", "财经市场", "全球市场", "宏观研究", "投资机会", "资产配置", "仓位建议",
+        "美联储", "美债", "美元指数", "非农", "cpi", "pce", "原油", "标普", "纳斯达克",
+        "地缘政治", "市场影响", "今天市场", "黄金、美股", "黄金美股", "黄金、美债",
+    )
+    return any(h.lower() in t for h in hints)
+
 st.markdown("## 🧭 AI工作模块")
 modules=[("📁 文件中心","PDF / Word / Excel / PPT / 报告"),("📈 投资中心","A股 / 黄金 / 美股 / 价值投资"),("📰 财经情报","全球市场 / 美联储 / 美债 / 美元"),("🧠 AI学习","GitHub / Python / Streamlit / Skill / Agent"),("📋 任务中心","今日任务 / 待办 / 计划"),("🚀 项目中心","ValueStock AI / AI网店 / AI视频 / AI工具")]
 for i in range(0,len(modules),3):
@@ -34,16 +43,31 @@ for i in range(0,len(modules),3):
     for col,(title,desc) in zip(cols,modules[i:i+3]):
         with col: st.info(f"### {title}\n\n{desc}")
 st.divider(); st.markdown("## 💬 AI总控台")
-user_task=st.text_area("告诉AI你想完成什么",placeholder="例如：分析今天全球财经市场，寻找黄金、美股、美债、美元、原油的投资机会",height=130)
+user_task=st.text_area("告诉AI你想完成什么",placeholder="例如：分析今天全球财经市场，寻找黄金、美股、美债、美元、原油的投资机会，并给出A股候选和仓位建议",height=130)
 
 if st.button("🚀 开始执行", type="primary"):
     if not user_task.strip(): st.warning("请先输入任务。"); st.stop()
-    result=route_task(user_task); stock_code=normalize_stock_code(user_task); effective_route=dict(result)
-    if stock_code and result.get("module")=="investment" and result.get("agent") not in {"gold_agent","finance_intelligence_agent"}:
-        effective_route["agent"]="value_stock_agent"; effective_route["sub_type"]="股票价值投资分析"
+
+    result=route_task(user_task)
+    stock_code=normalize_stock_code(user_task)
+    effective_route=dict(result)
+
+    # 强制防错：广义财经/宏观问题永远走财经Agent；只有明确指定股票/代码时才走ValueStock。
+    broad_finance=is_broad_finance_request(user_task)
+    if broad_finance and not result.get("original_module") == "finance":
+        effective_route["agent"]="finance_intelligence_agent"
+        effective_route["module"]="investment"
+        effective_route["original_module"]="finance"
+        effective_route["module_name"]="📰 财经情报"
+        effective_route["sub_type"]="全球财经情报 → 投资机会 → A股行业/个股研究 → 组合仓位"
+
+    if stock_code and not broad_finance and result.get("module")=="investment" and result.get("agent") not in {"gold_agent","finance_intelligence_agent"}:
+        effective_route["agent"]="value_stock_agent"
+        effective_route["sub_type"]="股票价值投资分析"
+
     st.markdown("## 🔎 AI任务解析"); st.write(f"**任务：** {result['task']}"); st.write(f"**任务模块：** {effective_route['module_name']}")
     if effective_route.get("agent"): st.write(f"**专业Agent：** `{effective_route['agent']}`")
-    if stock_code and effective_route.get("agent")!="finance_intelligence_agent": st.write(f"**识别股票：** `{stock_code}`")
+    if stock_code and effective_route.get("agent")!="finance_intelligence_agent" and not broad_finance: st.write(f"**识别股票：** `{stock_code}`")
     if effective_route["module"] not in ["investment","project","learning"]: st.info("当前模块仍处于基础路由阶段，后续版本继续接入专业Agent。"); st.stop()
     st.success(f"已进入：{effective_route['module_name']}")
     if effective_route["module"]=="investment": st.write(f"**分析类型：** {effective_route.get('sub_type','投资分析')}")
