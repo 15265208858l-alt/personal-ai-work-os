@@ -11,11 +11,12 @@ from industry_stock_engine_v1 import render_industry_stock_opportunities
 from investment_research_engine_v1 import render_investment_research
 from portfolio_decision_engine_v1 import render_portfolio_decision
 from investment_action_plan_v1 import render_action_plan
+from risk_review_engine_v1 import render_risk_review
 
 st.set_page_config(page_title="刘强 · Personal AI Work OS", page_icon="🧠", layout="wide")
 st.title("🧠 刘强 · Personal AI Work OS")
-st.subheader("个人 AI 工作操作系统 V2.9")
-st.caption("AI总控台 · 财经情报 · 投资机会 V5.2 · 决策驾驶舱 V6.0 · 行业→A股候选 · 深度研究 V1.0 · 组合仓位 V2.0 · 最终执行计划 V1.0")
+st.subheader("个人 AI 工作操作系统 V3.0")
+st.caption("AI总控台 · 财经情报 · 投资机会 V5.2 · 决策驾驶舱 V6.0 · 行业→A股候选 · 深度研究 V1.0 · 组合仓位 V2.0 · 最终执行计划 V1.0 · 风险复盘 V1.0")
 
 def as_dict(value): return value if isinstance(value, dict) else {}
 def first_dict(*values):
@@ -49,7 +50,7 @@ if st.button("🚀 开始执行", type="primary"):
     effective_route=dict(result)
     broad_finance=is_broad_finance_request(user_task)
     if broad_finance and result.get("original_module") != "finance":
-        effective_route.update({"agent":"finance_intelligence_agent","module":"investment","original_module":"finance","module_name":"📰 财经情报","sub_type":"全球财经情报 → 投资机会 → A股行业/个股研究 → 组合仓位 → 最终执行计划"})
+        effective_route.update({"agent":"finance_intelligence_agent","module":"investment","original_module":"finance","module_name":"📰 财经情报","sub_type":"全球财经情报 → 投资机会 → A股行业/个股研究 → 组合仓位 → 最终执行 → 风险复盘"})
     if stock_code and not broad_finance and result.get("module")=="investment" and result.get("agent") not in {"gold_agent","finance_intelligence_agent"}:
         effective_route["agent"]="value_stock_agent"; effective_route["sub_type"]="股票价值投资分析"
     st.markdown("## 🔎 AI任务解析"); st.write(f"**任务：** {result['task']}"); st.write(f"**任务模块：** {effective_route['module_name']}")
@@ -65,13 +66,13 @@ if st.button("🚀 开始执行", type="primary"):
             for task in tasks: st.write(f"**{task['id']}**  {task['name']}  — {task['status']}")
     spinner_text="正在调用 ValueStock AI 专业分析引擎，请稍候……"
     if effective_route.get("agent")=="gold_agent": spinner_text="正在调用黄金综合宏观研究 Agent，请稍候……"
-    elif effective_route.get("agent")=="finance_intelligence_agent": spinner_text="正在执行财经情报 → 投资机会 → 决策驾驶舱 → 行业/A股 → 深度研究 → 组合仓位 → 最终执行计划，请稍候……"
+    elif effective_route.get("agent")=="finance_intelligence_agent": spinner_text="正在执行财经情报 → 投资机会 → 决策驾驶舱 → 行业/A股 → 深度研究 → 组合仓位 → 最终执行 → 风险复盘，请稍候……"
     with st.spinner(spinner_text): results=execute_tasks(tasks,user_task,effective_route)
     execution_summary=get_execution_summary(results); first_result=results[0] if results else {}
     value_stock_result=next((x.get("value_stock_result") for x in results if x.get("value_stock_result") is not None),None)
     gold_result=next((x.get("gold_result") for x in results if x.get("gold_result") is not None),None)
     if effective_route.get("agent")=="finance_intelligence_agent":
-        finance_result=first_result.get("finance_result"); opportunity_result=first_result.get("opportunity_result"); cockpit_result=first_result.get("cockpit_result"); industry_stock_result=first_result.get("industry_stock_result"); research_result=first_result.get("research_result"); portfolio_result=first_result.get("portfolio_result"); action_plan_result=first_result.get("action_plan_result"); finance_error=first_result.get("finance_error")
+        finance_result=first_result.get("finance_result"); opportunity_result=first_result.get("opportunity_result"); cockpit_result=first_result.get("cockpit_result"); industry_stock_result=first_result.get("industry_stock_result"); research_result=first_result.get("research_result"); portfolio_result=first_result.get("portfolio_result"); action_plan_result=first_result.get("action_plan_result"); risk_review_result=first_result.get("risk_review_result"); finance_error=first_result.get("finance_error")
         if finance_error: st.error(finance_error); st.stop()
         if not isinstance(finance_result,dict): st.error("❌ 财经情报 Agent 没有返回有效的 finance_result。"); st.stop()
         render_finance_result_v2(finance_result)
@@ -87,6 +88,8 @@ if st.button("🚀 开始执行", type="primary"):
         render_portfolio_decision(portfolio_result)
         if not isinstance(action_plan_result,dict): st.error("❌ 最终投资执行计划没有返回有效结果。"); st.stop()
         render_action_plan(action_plan_result)
+        if not isinstance(risk_review_result,dict): st.error("❌ 风险管理与投资复盘中心没有返回有效结果。"); st.stop()
+        render_risk_review(risk_review_result)
         with st.expander("🔧 查看财经 Agent 后台执行明细",expanded=False):
             for r in results:
                 icon="✅" if r["status"]=="执行完成" else "⏳"; st.write(f"{icon} **{r['task_id']}** {r['task_name']} — {r['message']}")
