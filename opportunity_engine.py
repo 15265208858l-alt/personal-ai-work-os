@@ -1,4 +1,4 @@
-# 刘强 · Personal AI Work OS — Opportunity Engine V5.0 Decision Edition
+# 刘强 · Personal AI Work OS — Opportunity Engine V5.1 Decision Edition
 from __future__ import annotations
 
 from typing import Any
@@ -220,32 +220,39 @@ def _score(asset, f):
         risks.append(f"底层数据置信度仅{confidence:.0f}%")
 
     score = max(0, min(100, round(score)))
-    direction = "偏多" if score >= 62 else "偏空" if score <= 38 else "震荡"
-    level = "⭐⭐⭐⭐⭐" if score >= 80 else "⭐⭐⭐⭐" if score >= 70 else "⭐⭐⭐" if score >= 60 else "⭐⭐" if score >= 45 else "⭐"
+    if score >= 70:
+        level = "⭐⭐⭐"
+        direction = "偏多"
+    elif score >= 60:
+        level = "⭐⭐"
+        direction = "条件偏多"
+    elif score >= 40:
+        level = "⭐"
+        direction = "震荡"
+    else:
+        level = "⚠️"
+        direction = "偏弱"
 
     return {
         "asset": asset,
         "score": score,
-        "direction": direction,
         "level": level,
-        "evidence": evidence[:6],
-        "risks": risks[:6],
-        "triggers": triggers[:6],
-        "opportunity": opportunity[:4],
+        "direction": direction,
         "action": action,
         "entry_condition": entry,
         "position": position,
-        "why_now": why_now,
-        "invalidation": invalidation[:4],
         "horizon": horizon,
+        "why_now": why_now,
+        "evidence": evidence,
+        "opportunity": opportunity,
+        "risks": risks,
+        "triggers": triggers,
+        "invalidation": invalidation,
     }
 
 
 def _price_plan(asset, f):
-    source = "黄金期货" if asset == "黄金" else asset
-    p = _num(_asset(f, source).get("price"))
-    if p is None and asset == "黄金":
-        p = _num(_asset(f, "黄金").get("price"))
+    p = _num(_asset(f, asset).get("value"))
     if p is None:
         return {"current": None, "plan": "当前没有可靠价格，不生成虚构价位。"}
     if asset == "黄金":
@@ -258,13 +265,12 @@ def _price_plan(asset, f):
 
 def _cross_asset_impacts(rows):
     by = {x["asset"]: x for x in rows}
-    out = []
     gold = by.get("黄金", {}).get("score", 50)
     dollar = by.get("美元", {}).get("score", 50)
     oil = by.get("原油", {}).get("score", 50)
     bonds = by.get("美债", {}).get("score", 50)
     stocks = by.get("美股", {}).get("score", 50)
-
+    out = []
     if gold >= 60 and dollar <= 45:
         out.append("黄金←美元：美元偏弱与黄金偏强形成同向验证，黄金信号可信度高于单看价格。")
     if oil >= 60:
@@ -306,7 +312,7 @@ def analyze_opportunities(finance_result: dict[str, Any]):
     confidence = _num(finance_result.get("confidence")) or 0
 
     return {
-        "version": "V5.0",
+        "version": "V5.1",
         "assets": rows,
         "top_opportunities": top,
         "top_risks": risks,
@@ -322,7 +328,7 @@ def render_opportunities(data: dict[str, Any]) -> None:
     import streamlit as st
 
     r = data if isinstance(data, dict) and isinstance(data.get("assets"), list) else analyze_opportunities(data)
-    version = r.get("version", "V5.0")
+    version = r.get("version", "V5.1")
 
     st.markdown(f"## 🎯 投资机会雷达 {version}")
     st.caption(f"决策版：趋势 + 利率 + 美元 + 权威/专业新闻 + 拥挤度 + 数据质量；置信度 {r.get('confidence', 0):.0f}%。评分不是收益率预测。")
