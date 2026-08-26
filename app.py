@@ -14,7 +14,7 @@ st.set_page_config(
 
 st.title("🧠 刘强 · Personal AI Work OS")
 st.subheader("个人 AI 工作操作系统 V2.3")
-st.caption("AI总控台 · 智能任务路由 · 专业Agent调度 · ValueStock AI · Gold Macro Agent · Opportunity Radar V5.0")
+st.caption("AI总控台 · 智能任务路由 · 专业Agent调度 · ValueStock AI · Gold Macro Agent · Opportunity Radar V5.1")
 
 
 def as_dict(value):
@@ -103,7 +103,7 @@ if st.button("🚀 开始执行", type="primary"):
     if effective_route.get("agent") == "gold_agent":
         spinner_text = "正在调用黄金综合宏观研究 Agent，请稍候……"
     elif effective_route.get("agent") == "finance_intelligence_agent":
-        spinner_text = "正在执行全球财经情报与投资机会扫描 V5.0，请稍候……"
+        spinner_text = "正在执行全球财经情报与投资机会扫描 V5.1，请稍候……"
 
     with st.spinner(spinner_text):
         results = execute_tasks(tasks, user_task, effective_route)
