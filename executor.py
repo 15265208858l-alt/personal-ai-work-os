@@ -1,6 +1,6 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# Execution Engine V2.3.1
+# Execution Engine V2.4
 # =========================================================
 
 from data_provider import normalize_stock_code
@@ -8,6 +8,7 @@ from value_stock_bridge import run_value_stock_analysis
 from gold_macro_engine import analyze_gold_market
 from finance_intelligence_v2 import analyze_finance_market_v2, render_finance_result_v2
 from opportunity_engine_v52 import analyze_opportunities, render_opportunities
+from investment_cockpit_v60 import build_cockpit, render_cockpit
 
 
 def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None, finance_result=None):
@@ -70,10 +71,16 @@ def execute_tasks(tasks, user_request, route_result=None, **kwargs):
 
             # 第一层：权威宏观与新闻情报
             render_finance_result_v2(finance_result)
+
             # 第二层：消息 -> 宏观变量 -> 资产影响 -> 行动机会
             opportunity_result = analyze_opportunities(finance_result)
             render_opportunities(opportunity_result)
             finance_result["opportunity_analysis"] = opportunity_result
+
+            # 第三层：投资决策驾驶舱
+            cockpit_result = build_cockpit(finance_result, opportunity_result)
+            render_cockpit(cockpit_result)
+            finance_result["investment_cockpit"] = cockpit_result
 
             import streamlit as st
             st.stop()
