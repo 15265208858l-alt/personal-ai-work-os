@@ -1,8 +1,7 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# Execution Engine V2.7
+# Execution Engine V2.8
 # =========================================================
-
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
 from gold_macro_engine import analyze_gold_market
@@ -13,7 +12,7 @@ from industry_stock_engine_v1 import analyze_industry_stock_opportunities
 from investment_research_engine_v1 import analyze_investment_research
 
 
-def execute_task(task, user_request, market_data=None, value_stock_result=None, gold_result=None, finance_result=None):
+def execute_task(task,user_request,market_data=None,value_stock_result=None,gold_result=None,finance_result=None):
     result={"task_id":task["id"],"task_name":task["name"],"status":"执行完成","message":""}
     if market_data is not None: result["market_data"]=market_data
     if value_stock_result is not None: result["value_stock_result"]=value_stock_result
@@ -50,6 +49,7 @@ def execute_tasks(tasks,user_request,route_result=None,**kwargs):
             cockpit_result=build_cockpit(finance_result,opportunity_result)
             industry_stock_result=analyze_industry_stock_opportunities(finance_result,opportunity_result)
             research_result=analyze_investment_research(industry_stock_result)
+            industry_stock_result["research_result"]=research_result
         except Exception as exc: finance_error=f"财经情报Agent调用异常：{type(exc).__name__}: {exc}"
     results=[execute_task(task,user_request,market_data,value_stock_result,gold_result,finance_result) for task in tasks]
     if results and agent=="finance_intelligence_agent":
