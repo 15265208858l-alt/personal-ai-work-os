@@ -1,6 +1,6 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# Execution Engine V2.9
+# Execution Engine V3.0
 # =========================================================
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
@@ -11,6 +11,7 @@ from investment_cockpit_v60 import build_cockpit
 from industry_stock_engine_v1 import analyze_industry_stock_opportunities
 from investment_research_engine_v1 import analyze_investment_research
 from portfolio_decision_engine_v1 import build_portfolio_decision
+from investment_action_plan_v1 import build_action_plan
 
 
 def execute_task(task,user_request,market_data=None,value_stock_result=None,gold_result=None,finance_result=None):
@@ -31,7 +32,7 @@ def execute_task(task,user_request,market_data=None,value_stock_result=None,gold
 def execute_tasks(tasks,user_request,route_result=None,**kwargs):
     if route_result is None: route_result=kwargs.get("route_result") or {}
     market_data=value_stock_result=gold_result=finance_result=None
-    opportunity_result=cockpit_result=industry_stock_result=research_result=portfolio_result=None
+    opportunity_result=cockpit_result=industry_stock_result=research_result=portfolio_result=action_plan_result=None
     finance_error=None; agent=route_result.get("agent")
     if agent=="value_stock_agent":
         try:
@@ -52,10 +53,11 @@ def execute_tasks(tasks,user_request,route_result=None,**kwargs):
             research_result=analyze_investment_research(industry_stock_result)
             industry_stock_result["research_result"]=research_result
             portfolio_result=build_portfolio_decision(finance_result,opportunity_result,research_result)
+            action_plan_result=build_action_plan(finance_result,opportunity_result,research_result,portfolio_result)
         except Exception as exc: finance_error=f"财经投资研究Agent调用异常：{type(exc).__name__}: {exc}"
     results=[execute_task(task,user_request,market_data,value_stock_result,gold_result,finance_result) for task in tasks]
     if results and agent=="finance_intelligence_agent":
-        results[0].update({"finance_result":finance_result,"opportunity_result":opportunity_result,"cockpit_result":cockpit_result,"industry_stock_result":industry_stock_result,"research_result":research_result,"portfolio_result":portfolio_result,"finance_error":finance_error,"message":"财经情报 → 投资机会 → 决策驾驶舱 → 行业/A股 → 深度研究 → 组合仓位 已完成。"})
+        results[0].update({"finance_result":finance_result,"opportunity_result":opportunity_result,"cockpit_result":cockpit_result,"industry_stock_result":industry_stock_result,"research_result":research_result,"portfolio_result":portfolio_result,"action_plan_result":action_plan_result,"finance_error":finance_error,"message":"财经情报 → 投资机会 → 决策驾驶舱 → 行业/A股 → 深度研究 → 组合仓位 → 最终执行计划 已完成。"})
     return results
 
 
