@@ -1,6 +1,6 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# AI Task Router V1.8
+# AI Task Router V1.9
 # =========================================================
 
 MODULES = {
@@ -24,17 +24,21 @@ KEYWORDS = {
     "project": ["项目", "valuestock", "网店", "视频", "小程序", "工具", "商业", "创业"]
 }
 
+# 市场级问题进入综合财经投资 Agent；具体个股/代码仍进入 ValueStock。
 FINANCE_PRIORITY_HINTS = [
     "全球财经", "财经市场", "全球市场", "宏观研究", "投资机会", "资产配置", "仓位建议",
     "美联储", "美债", "美元指数", "非农", "cpi", "pce", "原油", "标普", "纳斯达克",
-    "地缘政治", "市场影响", "黄金、美股", "黄金美股", "黄金、美债", "今天市场"
+    "地缘政治", "市场影响", "黄金、美股", "黄金美股", "黄金、美债", "今天市场",
+    "a股市场", "a股大盘", "a股行情", "a股走势", "a股表现", "a股机会", "a股板块",
+    "股票市场", "股市表现", "股市行情", "大盘表现", "大盘走势", "沪深市场", "沪深股市",
+    "上证指数", "深证成指", "创业板指", "科创板", "北证", "今天a股", "今日a股",
+    "今天股市", "今日股市", "市场有没有机会", "有哪些股票值得关注", "值得关注的股票"
 ]
 
 def has_stock_identifier(task):
     if not task: return False
     text = task.lower()
     if any(name.lower() in text for name in STOCK_NAME_HINTS): return True
-    # 只有出现明确股票对象时，才视为股票任务；避免“股票市场”这类宏观问题误判。
     if any(x in text for x in ["具体股票", "个股", "上市公司", "股票代码", "选股"]): return True
     import re
     return bool(re.search(r"(?<!\d)\d{6}(?!\d)", text))
@@ -49,7 +53,6 @@ def is_finance_priority_task(task):
 
 def classify_task(task):
     if not task: return "unknown"
-    # 已明确指定股票代码/个股时，优先股票；否则宏观财经问题优先财经Agent。
     if is_stock_value_investment_task(task): return "investment"
     if is_finance_priority_task(task): return "finance"
     text = task.lower(); scores = {module: 0 for module in KEYWORDS}
@@ -74,10 +77,9 @@ def analyze_investment_task(task):
 def route_task(task):
     original_module = classify_task(task)
     result = {"module": original_module, "module_name": MODULES.get(original_module, {"name": "🧠 AI总控台", "description": "无法自动识别的任务"})["name"], "task": task}
-    # 财经优先：宏观/市场机会任务即使包含“投资”“股票市场”等词，也不进入ValueStock。
     if is_finance_priority_task(task) and not is_stock_value_investment_task(task):
         result["agent"] = "finance_intelligence_agent"
-        result["sub_type"] = "全球财经情报 → 投资机会 → A股行业/个股研究"
+        result["sub_type"] = "全球财经情报 → 投资机会 → A股行业/个股研究 → 组合仓位 → 最终执行 → 风险复盘 → 投资监控 → 复盘记忆"
         result["module"] = "investment"
         result["original_module"] = "finance"
         result["module_name"] = MODULES["finance"]["name"]
