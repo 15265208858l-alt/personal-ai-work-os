@@ -1,4 +1,4 @@
-# 刘强 · Personal AI Work OS — Industry → A-share Stock Engine V1.1
+# 刘强 · Personal AI Work OS — Industry → A-share Stock Engine V1.2
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -11,7 +11,8 @@ THEMES={
     "高股息/防御":{"triggers":["risk-off","recession","defensive","dividend","避险","衰退","risk aversion"],"reason":"风险偏好下降、利率方向改善时，高股息和防御资产可能相对占优；高股息不等于低估值。","stocks":[("中国神华","601088"),("长江电力","600900"),("中国移动","600941")]},
 }
 
-def _text(finance): return " ".join(str(x.get("title","")) for x in finance.get("news",[]) if isinstance(x,dict) and x.get("tier") in {"authoritative","professional"}).lower()
+def _text(finance):
+    return " ".join(str(x.get("title","")) for x in finance.get("news",[]) if isinstance(x,dict) and x.get("tier") in {"authoritative","professional"}).lower()
 
 def _theme_score(name,theme,finance,opportunity):
     text=_text(finance); score=sum(8 for w in theme["triggers"] if w.lower() in text); evidence=[]
@@ -36,14 +37,18 @@ def _extract(v):
     return {"success":bool(v.get("success")),"name":v.get("name",""),"code":v.get("code",""),"score":score.get("score") if isinstance(score,dict) else None,"rating":score.get("rating") if isinstance(score,dict) else None,"risk":score.get("risk_level") if isinstance(score,dict) else None,"action":decision.get("action") if isinstance(decision,dict) else None,"current_price":market.get("price"),"entry_price":sc.get("entry_price") if isinstance(sc,dict) else None,"heavy_price":sc.get("heavy_price") if isinstance(sc,dict) else None,"valuation":sc.get("normal") if isinstance(sc,dict) else None,"data_score":dc.get("score")}
 
 def _validate(stocks):
+    """深度验证只取主题代表股，避免一次宏观分析重复调用6次ValueStock。
+    ValueStock本身已做数据并行和90秒缓存；这里再并行多个代表股会显著拖慢移动端体验。"""
+    selected=list(stocks[:1])
     out=[]
-    with ThreadPoolExecutor(max_workers=min(3,len(stocks))) as pool:
-        fs={pool.submit(run_value_stock_analysis,code):(name,code) for name,code in stocks[:3]}
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        fs={pool.submit(run_value_stock_analysis,code):(name,code) for name,code in selected}
         for f in as_completed(fs):
             name,code=fs[f]
             try:
                 x=_extract(f.result()); x["name"]=x.get("name") or name; x["code"]=x.get("code") or code; out.append(x)
-            except Exception as e: out.append({"success":False,"name":name,"code":code,"error":f"{type(e).__name__}: {e}"})
+            except Exception as e:
+                out.append({"success":False,"name":name,"code":code,"error":f"{type(e).__name__}: {e}"})
     return sorted(out,key=lambda x:(x.get("score") is not None,x.get("score") or -1),reverse=True)
 
 def analyze_industry_stock_opportunities(finance,opportunity):
@@ -51,14 +56,16 @@ def analyze_industry_stock_opportunities(finance,opportunity):
     for name,theme in THEMES.items():
         s,e=_theme_score(name,theme,finance,opportunity)
         if s>=12: themes.append({"theme":name,"score":s,"reason":theme["reason"],"evidence":e,"stocks":theme["stocks"]})
-    themes=sorted(themes,key=lambda x:x["score"],reverse=True)[:2]; candidates=[]
+    themes=sorted(themes,key=lambda x:x["score"],reverse=True)[:2]
+    candidates=[]
     for t in themes:
-        for x in _validate(t["stocks"]): x.update({"theme":t["theme"],"theme_score":t["score"],"theme_reason":t["reason"]}); candidates.append(x)
-    return {"version":"V1.1","themes":themes,"stock_candidates":candidates[:6],"rule":"先用宏观/资产信号筛行业，再用ValueStock AI验证企业质量与估值；数据不完整时不做强推荐。"}
+        for x in _validate(t["stocks"]):
+            x.update({"theme":t["theme"],"theme_score":t["score"],"theme_reason":t["reason"]}); candidates.append(x)
+    return {"version":"V1.2","themes":themes,"stock_candidates":candidates[:2],"rule":"先用宏观/资产信号筛行业，再用ValueStock验证每个主题的1只代表股；数据不完整时不做强推荐。完整个股扩展改为按需二次研究，避免主流程长时间阻塞。"}
 
 def render_industry_stock_opportunities(data):
     import streamlit as st
-    st.divider(); st.markdown("## 🏭 宏观机会 → 行业 → A股候选 V1.1"); st.caption(data.get("rule",""))
+    st.divider(); st.markdown("## 🏭 宏观机会 → 行业 → A股候选 V1.2"); st.caption(data.get("rule",""))
     if not data.get("themes"): st.info("当前没有形成足够强的行业共振，暂不强行筛选A股。") ; return
     st.markdown("### 🔥 当前最值得研究的行业")
     for t in data["themes"]:
