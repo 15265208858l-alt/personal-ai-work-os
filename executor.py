@@ -1,6 +1,6 @@
 # =========================================================
 # 刘强 · Personal AI Work OS
-# Execution Engine V4.1
+# Execution Engine V4.2
 # =========================================================
 from data_provider import normalize_stock_code
 from value_stock_bridge import run_value_stock_analysis
@@ -14,6 +14,7 @@ from portfolio_decision_engine_v1 import build_portfolio_decision
 from investment_action_plan_v1 import build_action_plan
 from risk_review_engine_v1 import build_risk_review
 from investment_monitor_engine_v1 import build_investment_monitor
+from investment_decision_agent_v1 import build_decision_agent
 
 
 def execute_task(task,user_request,market_data=None,value_stock_result=None,gold_result=None,finance_result=None):
@@ -34,7 +35,7 @@ def execute_task(task,user_request,market_data=None,value_stock_result=None,gold
 def execute_tasks(tasks,user_request,route_result=None,**kwargs):
     if route_result is None: route_result=kwargs.get("route_result") or {}
     market_data=value_stock_result=gold_result=finance_result=None
-    opportunity_result=cockpit_result=industry_stock_result=research_result=portfolio_result=action_plan_result=risk_review_result=monitor_result=None
+    opportunity_result=cockpit_result=industry_stock_result=research_result=portfolio_result=action_plan_result=risk_review_result=monitor_result=decision_agent_result=None
     finance_error=None; agent=route_result.get("agent")
     if agent=="value_stock_agent":
         try:
@@ -58,10 +59,11 @@ def execute_tasks(tasks,user_request,route_result=None,**kwargs):
             action_plan_result=build_action_plan(finance_result,opportunity_result,research_result,portfolio_result)
             risk_review_result=build_risk_review(finance_result,opportunity_result,research_result,portfolio_result,action_plan_result)
             monitor_result=build_investment_monitor(finance_result,opportunity_result,research_result,portfolio_result,risk_review_result)
+            decision_agent_result=build_decision_agent(finance_result,opportunity_result,cockpit_result,research_result,portfolio_result,action_plan_result,risk_review_result,monitor_result)
         except Exception as exc: finance_error=f"财经投资研究Agent调用异常：{type(exc).__name__}: {exc}"
     results=[execute_task(task,user_request,market_data,value_stock_result,gold_result,finance_result) for task in tasks]
     if results and agent=="finance_intelligence_agent":
-        results[0].update({"finance_result":finance_result,"opportunity_result":opportunity_result,"cockpit_result":cockpit_result,"industry_stock_result":industry_stock_result,"research_result":research_result,"portfolio_result":portfolio_result,"action_plan_result":action_plan_result,"risk_review_result":risk_review_result,"monitor_result":monitor_result,"finance_error":finance_error,"message":"财经情报 → 投资机会 → 决策驾驶舱 → 行业/A股 → 深度研究 → 组合仓位 → 最终执行 → 风险复盘 → 投资监控 已完成。"})
+        results[0].update({"finance_result":finance_result,"opportunity_result":opportunity_result,"cockpit_result":cockpit_result,"industry_stock_result":industry_stock_result,"research_result":research_result,"portfolio_result":portfolio_result,"action_plan_result":action_plan_result,"risk_review_result":risk_review_result,"monitor_result":monitor_result,"decision_agent_result":decision_agent_result,"finance_error":finance_error,"message":"财经情报 → 投资机会 → 决策驾驶舱 → 行业/A股 → 深度研究 → 组合仓位 → 最终执行 → 风险复盘 → 投资监控 → 投资决策Agent 已完成。"})
     return results
 
 
